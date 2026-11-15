@@ -52,12 +52,15 @@ The current site lives in `site-3d/` and is served from the app's `public/` dire
 
 ```bash
 cd site-3d
-npm run build                      # writes site-3d/dist
-node audit.mjs                     # must report 0 problems
+npm run audit                      # must report 0 problems across all routes
+npm run build:static               # vite build + prerender all 74 routes to HTML
+npm run publish                    # publish routes, assets, sitemap and robots into ../public
 cd ..
-# copy dist/index.html and its referenced assets into public/, drop stale assets, then:
 npm run build                      # rebuild the Next app so public/ is baked into the image
 ```
+
+`publish` writes `public/routes.json`, which `next.config.ts` turns into rewrites — without
+it, `/catalogue` and the other 73 paths 404 instead of serving their prerendered document.
 
 Then deploy as above. Because `public/` is baked into the image at build time, a site change
 requires a full image build — it cannot be hot-swapped.

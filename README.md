@@ -78,9 +78,18 @@ node audit.mjs     # crawls all 74 routes at 2 viewports: links, console, overfl
 node axe.mjs       # WCAG 2 A/AA scan (needs network for the axe CDN)
 ```
 
-To publish a `site-3d` build, copy `dist/` into the app's `public/` (replacing the old
-`assets/`), then rebuild and redeploy the app. See [docs/GIT-WORKFLOW.md](docs/GIT-WORKFLOW.md)
-for the promotion path, [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the Azure steps.
+The site is prerendered before it is published — crawlers must see content, not an empty
+`<div id="root">`:
+
+```bash
+cd site-3d
+npm run build:static   # vite build, then render all 74 routes to static HTML
+npm run publish        # copy the routes, assets, sitemap and robots into ../public
+cd .. && npm run build # rebuild the app so public/ is baked into the image
+```
+
+See [docs/SEO.md](docs/SEO.md) for what each route serves and
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the Azure steps.
 
 ---
 

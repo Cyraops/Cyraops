@@ -9,7 +9,8 @@
     "preview": "vite preview --port 3101",
     "prerender": "node prerender.mjs",
     "build:static": "npm run build && npm run prerender",
-    "publish": "node publish.mjs"
+    "publish": "node publish.mjs",
+    "audit": "node audit.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.6",
