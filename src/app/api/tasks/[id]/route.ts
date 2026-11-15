@@ -2,12 +2,12 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { logActivity, publicUserSelect, sameOrigin, userFromRequest } from "@/lib/auth";
-import { jsonError, prioritySchema, taskStatusSchema } from "@/lib/validators";
+import { jsonError, prioritySchema, taskKindSchema, taskStatusSchema } from "@/lib/validators";
 import { listTaskAssignees, newlyAssigned, normaliseAssigneeSet, setTaskAssignees } from "@/lib/tasks/assignees";
 import { delegateAgentWork } from "@/lib/tasks/delegate";
 
 type Context = { params: Promise<{ id: string }> };
-const updateSchema = z.object({ title: z.string().trim().min(1).max(180).optional(), description: z.string().max(10000).optional(), status: taskStatusSchema.optional(), priority: prioritySchema.optional(), dueDate: z.string().datetime().optional().nullable(), assigneeId: z.string().optional().nullable(),
+const updateSchema = z.object({ title: z.string().trim().min(1).max(180).optional(), description: z.string().max(10000).optional(), status: taskStatusSchema.optional(), priority: prioritySchema.optional(), kind: taskKindSchema.nullable().optional(), dueDate: z.string().datetime().optional().nullable(), assigneeId: z.string().optional().nullable(),
   // Replace the owner set. Omitted = leave it alone; empty array = clear it.
   assigneeIds: z.array(z.string()).optional(),
   agentSlugs: z.array(z.string()).optional(),

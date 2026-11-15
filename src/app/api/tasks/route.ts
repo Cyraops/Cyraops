@@ -2,11 +2,11 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { logActivity, publicUserSelect, sameOrigin, userFromRequest } from "@/lib/auth";
-import { jsonError, prioritySchema, taskStatusSchema } from "@/lib/validators";
+import { jsonError, prioritySchema, taskKindSchema, taskStatusSchema } from "@/lib/validators";
 import { listTaskAssignees, normaliseAssigneeSet, setTaskAssignees, validateHumanAssignees } from "@/lib/tasks/assignees";
 import { delegateAgentWork } from "@/lib/tasks/delegate";
 
-const createSchema = z.object({ title: z.string().trim().min(1).max(180), description: z.string().max(10000).optional(), status: taskStatusSchema.optional(), priority: prioritySchema.optional(), dueDate: z.string().datetime().optional().or(z.literal("")), projectId: z.string().optional(), assigneeId: z.string().optional().nullable(),
+const createSchema = z.object({ title: z.string().trim().min(1).max(180), description: z.string().max(10000).optional(), status: taskStatusSchema.optional(), priority: prioritySchema.optional(), kind: taskKindSchema.optional(), dueDate: z.string().datetime().optional().or(z.literal("")), projectId: z.string().optional(), assigneeId: z.string().optional().nullable(),
   // Several owners, and agents can be among them. `assigneeId` stays supported.
   assigneeIds: z.array(z.string()).optional(),
   agentSlugs: z.array(z.string()).optional(),
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const task = await db.task.create({ data: { title: data.title, description: data.description ?? "", status: data.status, priority: data.priority, dueDate: data.dueDate ? new Date(data.dueDate) : null, projectId, assigneeId: owners.userIds[0] ?? null, parentId: data.parentId ?? null, creatorId: user.id }, include: { assignee: { select: publicUserSelect }, project: { select: { id: true, name: true } } } });
+  const task = await db.task.create({ data: { title: data.title, description: data.description ?? "", status: data.status, priority: data.priority, kind: data.kind ?? null, dueDate: data.dueDate ? new Date(data.dueDate) : null, projectId, assigneeId: owners.userIds[0] ?? null, parentId: data.parentId ?? null, creatorId: user.id }, include: { assignee: { select: publicUserSelect }, project: { select: { id: true, name: true } } } });
   await setTaskAssignees(task.id, owners);
 
   for (const assigneeId of owners.userIds) {

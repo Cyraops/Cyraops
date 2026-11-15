@@ -18,6 +18,7 @@ import { createTicketFromInstruction, parseTicketInstruction, loadTicketPersonas
 
 const createSchema = z.object({
   text: z.string().trim().min(1).max(12_000),
+  kind: z.enum(["BUG", "SERVICE", "CATEGORY"]).optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
       title: true,
       status: true,
       priority: true,
+      kind: true,
       dueDate: true,
       createdAt: true,
       project: { select: { id: true, name: true } },
@@ -77,6 +79,7 @@ export async function POST(request: NextRequest) {
     const result = await createTicketFromInstruction({
       text: parsed.data.text,
       actor: { id: user.id, name: user.name, role: user.role },
+      kind: parsed.data.kind ?? null,
     });
 
     return Response.json({ ok: true, ...result }, { status: 201 });

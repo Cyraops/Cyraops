@@ -36,6 +36,15 @@ enum TaskStatus {
   DONE
 }
 
+/// What kind of work a task is. Deliberately short: a bug is something broken,
+/// a service is an agreed piece of work, a category is a grouping item. Null
+/// means nobody classified it yet, which is visible rather than guessed.
+enum TaskKind {
+  BUG
+  SERVICE
+  CATEGORY
+}
+
 enum ConversationType {
   DIRECT
   GROUP
@@ -277,6 +286,7 @@ model Task {
   description String        @default("")
   status      TaskStatus    @default(TODO)
   priority    Priority      @default(MEDIUM)
+  kind        TaskKind?
   dueDate     DateTime?
   projectId   String
   assigneeId  String?
@@ -298,6 +308,7 @@ model Task {
   @@index([projectId, status])
   @@index([assigneeId, dueDate])
   @@index([dueDate])
+  @@index([kind])
 }
 
 /// Who a task belongs to. A task can have several owners, and an AI agent can be

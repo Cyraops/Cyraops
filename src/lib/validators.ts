@@ -5,6 +5,8 @@ export const passwordSchema = z.string().min(12, "Use at least 12 characters").m
 export const nameSchema = z.string().trim().min(2).max(80);
 export const taskStatusSchema = z.enum(["BACKLOG", "TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]);
 export const prioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
+/** BUG = something broken, SERVICE = agreed work, CATEGORY = grouping item. */
+export const taskKindSchema = z.enum(["BUG", "SERVICE", "CATEGORY"]);
 export const projectStatusSchema = z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]);
 
 export function jsonError(message: string, status = 400) {

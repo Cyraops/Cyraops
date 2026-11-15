@@ -24,6 +24,7 @@ type Ticket = {
   title: string;
   status: string;
   priority?: string;
+  kind?: string | null;
   dueDate?: string | null;
   createdAt: string;
   project?: { id: string; name: string } | null;
@@ -42,6 +43,17 @@ type Approval = {
 const STATUSES = ["BACKLOG", "TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"] as const;
 
 const statusLabel = (status: string) => status.replaceAll("_", " ").toLowerCase();
+
+const KINDS = ["", "BUG", "SERVICE", "CATEGORY"] as const;
+const kindLabel = (kind?: string | null) => (kind ? kind.toLowerCase() : "unclassified");
+const kindTone = (kind?: string | null) =>
+  kind === "BUG"
+    ? "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+    : kind === "SERVICE"
+      ? "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300"
+      : kind === "CATEGORY"
+        ? "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300"
+        : "bg-[var(--hover)] text-[var(--muted)]";
 
 const statusTone = (status: string) => {
   switch (status) {
@@ -68,6 +80,8 @@ export function TasksBoard() {
   const [adding, setAdding] = useState(false);
   const [deciding, setDeciding] = useState("");
   const [savingStatus, setSavingStatus] = useState("");
+  const [savingKind, setSavingKind] = useState("");
+  const [kindFilter, setKindFilter] = useState<"" | "BUG" | "SERVICE" | "CATEGORY">("");
   const [me, setMe] = useState<{ id: string; name: string; role: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -96,15 +110,34 @@ export function TasksBoard() {
       if (filter === "mine" && !(ticket.assignees ?? []).some((owner) => owner.kind === "user" && owner.id === me?.id)) {
         return false;
       }
+      if (kindFilter && (ticket.kind ?? "") !== kindFilter) return false;
       if (!needle) return true;
       return (
         ticket.title.toLowerCase().includes(needle) ||
         (ticket.assignees ?? []).some((owner) => owner.name.toLowerCase().includes(needle))
       );
     });
-  }, [tickets, filter, query, me]);
+  }, [tickets, filter, kindFilter, query, me]);
 
   const openCount = tickets.filter((ticket) => ticket.status !== "DONE").length;
+
+  /** Classify a ticket in place: bug, service item, or category. */
+  const setKind = async (ticket: Ticket, kind: string) => {
+    setSavingKind(ticket.id);
+    try {
+      const response = await fetch(`/api/tasks/${ticket.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: kind || null }),
+      });
+      if (!response.ok) throw new Error("Could not change the type");
+      setTickets((prev) => prev.map((item) => (item.id === ticket.id ? { ...item, kind: kind || null } : item)));
+    } catch {
+      toast("Could not change the type", "error");
+    } finally {
+      setSavingKind("");
+    }
+  };
 
   const setStatus = async (ticket: Ticket, status: string) => {
     setSavingStatus(ticket.id);
@@ -202,6 +235,17 @@ export function TasksBoard() {
               {value === "mine" ? "Assigned to me" : value}
             </button>
           ))}
+          <select
+            value={kindFilter}
+            onChange={(event) => setKindFilter(event.target.value as typeof kindFilter)}
+            aria-label="Filter by type"
+            className="ml-1 h-[30px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-1.5 text-caption font-semibold capitalize outline-none focus:border-accent"
+          >
+            <option value="">All types</option>
+            <option value="BUG">Bugs</option>
+            <option value="SERVICE">Service</option>
+            <option value="CATEGORY">Category</option>
+          </select>
         </div>
       </header>
 
@@ -302,6 +346,13 @@ export function TasksBoard() {
                         ticket.status === "DONE" ? "text-[var(--muted)] line-through" : ""
                       }`}
                     >
+                      {ticket.kind && (
+                        <span
+                          className={`mr-1.5 inline-block rounded-full px-1.5 py-0.5 align-middle text-[9px] font-bold uppercase tracking-wider ${kindTone(ticket.kind)}`}
+                        >
+                          {kindLabel(ticket.kind)}
+                        </span>
+                      )}
                       {ticket.title}
                     </p>
                     <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-caption text-[var(--muted)]">
@@ -330,6 +381,20 @@ export function TasksBoard() {
                   <span className={`rounded-full px-2 py-0.5 text-caption font-semibold ${statusTone(ticket.status)}`}>
                     {statusLabel(ticket.status)}
                   </span>
+
+                  <select
+                    value={ticket.kind ?? ""}
+                    disabled={savingKind === ticket.id}
+                    onChange={(event) => void setKind(ticket, event.target.value)}
+                    aria-label={`Type for ${ticket.title}`}
+                    className={`h-7 rounded-lg border border-[var(--border)] px-1.5 text-caption font-semibold capitalize outline-none focus:border-accent disabled:opacity-50 ${kindTone(ticket.kind)}`}
+                  >
+                    {KINDS.map((kind) => (
+                      <option key={kind} value={kind}>
+                        {kindLabel(kind)}
+                      </option>
+                    ))}
+                  </select>
 
                   {/* Tracking means being able to move it, not just look at it. */}
                   <select

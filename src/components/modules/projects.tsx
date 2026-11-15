@@ -32,6 +32,26 @@ import {
   useToast,
 } from "@/components/ui";
 
+const KIND_TONE: Record<string, string> = {
+  BUG: "bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300",
+  SERVICE: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300",
+  CATEGORY: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300",
+};
+
+/** What kind of work this is: bug, service item, or category. Null stays invisible. */
+export function TaskKindBadge({ kind, className = "" }: { kind?: string | null; className?: string }) {
+  if (!kind) return null;
+  return (
+    <span
+      className={`mt-1 inline-block rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+        KIND_TONE[kind] ?? "bg-[var(--hover)] text-[var(--muted)]"
+      } ${className}`}
+    >
+      {kind.toLowerCase()}
+    </span>
+  );
+}
+
 const statuses = ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"];
 const tabs = [
   { id: "overview", label: "Overview", icon: FolderKanban },
@@ -1289,6 +1309,7 @@ function TaskRows({
             >
               {task.title}
             </span>
+            {task.kind && <TaskKindBadge kind={task.kind} />}
             <span className="mt-1 block text-[10px] text-[var(--muted)]">
               <button
                 type="button"
@@ -1386,6 +1407,7 @@ function TaskCreate({
         assigneeIds: f.getAll("assigneeIds").map(String).filter(Boolean),
         agentSlugs: f.getAll("agentSlugs").map(String).filter(Boolean),
         priority: f.get("priority"),
+        kind: f.get("kind") || undefined,
         dueDate: f.get("dueDate")
           ? new Date(String(f.get("dueDate"))).toISOString()
           : "",
@@ -1438,6 +1460,12 @@ function TaskCreate({
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
+          <Select name="kind" label="Type" defaultValue="">
+            <option value="">Unclassified</option>
+            <option value="BUG">Bug — something broken</option>
+            <option value="SERVICE">Service — agreed work</option>
+            <option value="CATEGORY">Category — grouping item</option>
+          </Select>
           <Select name="priority" label="Priority" defaultValue="MEDIUM">
             {["LOW", "MEDIUM", "HIGH", "URGENT"].map((p) => (
               <option key={p} value={p}>

@@ -201,9 +201,22 @@ export interface CreatedTicket {
   awaitingApproval: string[];
 }
 
+export type TicketKind = "BUG" | "SERVICE" | "CATEGORY";
+
+/**
+ * Reads the classification from the message when the writer names one, so
+ * "@tasks bug: login fails" is filed as a bug without a second step.
+ */
+export function inferTicketKind(text: string): TicketKind | null {
+  const match = text.trim().match(/^@tasks\s+(bug|service|category)\b/i);
+  if (!match) return null;
+  return match[1].toUpperCase() as TicketKind;
+}
+
 export async function createTicketFromInstruction(params: {
   text: string;
   actor: { id: string; name: string; role: string };
+  kind?: TicketKind | null;
 }): Promise<{ parsed: ParsedTicket; ticket?: CreatedTicket }> {
   const people = await loadTicketPersonas();
   const parsed = parseTicketInstruction(params.text, people);
@@ -240,6 +253,7 @@ export async function createTicketFromInstruction(params: {
       projectId,
       creatorId: params.actor.id,
       assigneeId: owners.userIds[0] ?? null,
+      kind: params.kind ?? inferTicketKind(params.text),
     },
     select: { id: true, title: true },
   });
