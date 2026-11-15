@@ -165,6 +165,12 @@ Remote URLs by host:
 | Host | SSH | HTTPS |
 |---|---|---|
 | GitHub | `git@github.com:<org>/cyraops.git` | `https://github.com/<org>/cyraops.git` |
+
+This repository uses **HTTPS** (`https://github.com/Cyraops/Cyraops.git`). Credentials are
+handled by the macOS Keychain helper, so the first push prompts once for a username
+(`sales@cyraops.com`) and a **personal access token** as the password — GitHub does not
+accept account passwords over HTTPS. To stop storing it:
+`git config --local --unset credential.helper`.
 | Azure Repos | `git@ssh.dev.azure.com:v3/<org>/<project>/cyraops` | `https://dev.azure.com/<org>/<project>/_git/cyraops` |
 | GitLab | `git@gitlab.com:<group>/cyraops.git` | `https://gitlab.com/<group>/cyraops.git` |
 
@@ -200,5 +206,5 @@ git config http.version HTTP/1.1
 git config http.postBuffer 524288000
 ```
 
-Pushing over SSH does not hit this, which is the main reason the documented remote is
-the SSH URL.
+Pushing over SSH does not hit this. This repository's `origin` is HTTPS, and both settings
+are already applied in its local config, so a plain `git push` works.
