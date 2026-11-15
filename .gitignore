@@ -64,6 +64,7 @@ Thumbs.db
 !.vscode/extensions.json
 
 # Local tooling
+scratch/          # one-off audit and screenshot scripts, kept on disk only
 .vercel
 .azure/
 *.local
