@@ -132,22 +132,24 @@ git tag -a v$(date +%Y.%m.%d) -m "Production release: <one line>" && git push or
 
 Deploying after step 5: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
-## Branch protection on the remote (not available on this plan)
+## Branch protection on the remote
 
-GitHub only offers branch protection and rulesets for **private** repositories on a paid
-plan. This repository is private on a free account, so both the protection API and the
-rulesets API return `403: Upgrade to GitHub Pro or make this repository public`.
+This repository is **public**, which makes branch protection free, and both long-lived
+release branches are protected:
 
-What that means in practice:
+| Branch | Force-push | Deletion | Direct push |
+|---|---|---|---|
+| `production` | blocked | blocked | allowed (fast-forward) |
+| `release` | blocked | blocked | allowed (fast-forward) |
+| `dev` | allowed | allowed | this is where work happens |
 
-- Force-push and branch-deletion protection on `release` and `production` is **not enforced
-  by GitHub today**. It is enforced by discipline and by the `pre-push` hook above.
-- To get the server-side lock, either upgrade the account to GitHub Pro (~$4/month) or make
-  the repository public. Then enable protection on `release` and `production`:
-  *Settings → Branches → Add branch protection rule* with **Allow force pushes** and
-  **Allow deletions** both off.
+What that means: history on `release` and `production` cannot be rewritten or removed by
+accident. A normal promoted push still works — the guard is against `--force`, not against
+shipping.
 
-Do not describe these branches as "protected" until that is actually on.
+If the repository is ever made private again, GitHub drops this protection on the free plan
+(protection is a paid feature for private repositories) and the rule becomes convention plus
+the local `pre-push` hook only.
 
 ## Review checklist
 
