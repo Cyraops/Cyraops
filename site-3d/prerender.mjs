@@ -112,9 +112,23 @@ ${routes
 </urlset>
 `;
 fs.writeFileSync(path.join(DIST, "sitemap.xml"), sitemap);
+const APP_PATHS = [
+  "/api/", "/login", "/setup", "/dashboard", "/crm", "/projects", "/tasks", "/chat",
+  "/email", "/calendar", "/activity", "/website", "/cost", "/team", "/settings", "/ai",
+  "/uploads/", "/index.html",
+];
 fs.writeFileSync(
   path.join(DIST, "robots.txt"),
-  `User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`
+  [
+    "User-agent: *",
+    "Allow: /",
+    "",
+    "# The product is not marketing content: keep it out of the index.",
+    ...APP_PATHS.map((p) => `Disallow: ${p}`),
+    "",
+    `Sitemap: ${SITE}/sitemap.xml`,
+    "",
+  ].join("\n")
 );
 
 /** The route list the Next config turns into rewrites. */

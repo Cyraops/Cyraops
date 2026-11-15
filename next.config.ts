@@ -32,6 +32,12 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@prisma/client"],
   allowedDevOrigins: ["localhost", "127.0.0.1"],
   async headers() {
+    // The CRM is a private product, not marketing content. robots.txt asks
+    // crawlers to stay out; this header tells them even if they ignore it.
+    const appPaths = [
+      "/login", "/setup", "/dashboard", "/crm", "/projects", "/tasks", "/chat", "/email",
+      "/calendar", "/activity", "/website", "/cost", "/team", "/settings", "/ai",
+    ];
     return [
       {
         source: "/:path*",
@@ -39,6 +45,18 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "no-referrer" },
           { key: "X-Content-Type-Options", value: "nosniff" },
         ],
+      },
+      ...appPaths.map((path) => ({
+        source: `${path}/:rest*`,
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      })),
+      ...appPaths.map((path) => ({
+        source: path,
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      })),
+      {
+        source: "/api/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
     ];
   },

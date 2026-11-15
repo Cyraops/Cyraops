@@ -10,6 +10,14 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 export function middleware(request: NextRequest) {
   const host = request.headers.get("host") ?? "";
+
+  // /index.html is the same document as / — one URL per page, not two.
+  if (request.nextUrl.pathname === "/index.html") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url, 301);
+  }
+
   if (host === "cyraops.com") {
     const url = request.nextUrl.clone();
     url.host = "www.cyraops.com";
