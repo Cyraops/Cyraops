@@ -143,3 +143,39 @@ covers backups) and prefer a forward fix.
 4. Marketing-site changes are only "done" when `node audit.mjs` reports zero problems at both
    1440px and 390px.
 5. A database migration is part of the release it ships with, not a follow-up.
+
+---
+
+## Publishing this repository
+
+The local repository has no remote yet. Create an **empty** repository on the host (no
+README, no licence, no `.gitignore` — they would conflict with what is already committed),
+then:
+
+```bash
+git remote add origin <repo-url>
+git push -u origin dev
+git push -u origin release production
+git tag -a v2026.11.15 -m "Initial production release"
+git push origin v2026.11.15
+```
+
+Remote URLs by host:
+
+| Host | SSH | HTTPS |
+|---|---|---|
+| GitHub | `git@github.com:<org>/cyraops.git` | `https://github.com/<org>/cyraops.git` |
+| Azure Repos | `git@ssh.dev.azure.com:v3/<org>/<project>/cyraops` | `https://dev.azure.com/<org>/<project>/_git/cyraops` |
+| GitLab | `git@gitlab.com:<group>/cyraops.git` | `https://gitlab.com/<group>/cyraops.git` |
+
+Commits are authored as `CyraOps <Sales@cyraops.com>` (set in this repository's config):
+
+```bash
+git config user.name  "CyraOps"
+git config user.email "Sales@cyraops.com"
+```
+
+**One caveat worth knowing:** hosting platforms attribute a commit to an account by its
+email address, and only if that address is verified on the account. If `Sales@cyraops.com`
+is not verified on the hosting account, the commits will still push but will show as
+unlinked. Verify the address in the account settings first.
