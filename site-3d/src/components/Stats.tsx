@@ -18,10 +18,14 @@ interface Stat {
 export function Stats({ stats }: { stats: Stat[] }) {
   const ref = useRef<HTMLDivElement>(null);
   const inView = useInView(ref, { once: true, margin: "-20% 0px" });
-  const [values, setValues] = useState<number[]>(() => stats.map(() => 0));
+  // Start at the real numbers, not at zero: a crawler, a reader with JS off, or
+  // a prerendered snapshot must never see "0 offerings". The count-up is an
+  // enhancement that runs only once the block is on screen.
+  const [values, setValues] = useState<number[]>(() => stats.map((stat) => stat.value));
 
   useEffect(() => {
     if (!inView) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let raf = 0;
     const start = performance.now();
     const duration = 1400;

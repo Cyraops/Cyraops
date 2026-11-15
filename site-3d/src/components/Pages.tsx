@@ -15,7 +15,7 @@ const emphasis = (text: string) =>
 function Crumbs({ trail }: { trail: Array<{ label: string; href?: string }> }) {
   return (
     <nav className="crumbs" aria-label="Breadcrumb">
-      <a href="#/" onClick={(e) => { e.preventDefault(); navigate("#/"); }}>Home</a>
+      <a href="/" onClick={(e) => { e.preventDefault(); navigate("/"); }}>Home</a>
       {trail.map((crumb) => (
         <span key={crumb.label}>
           <i aria-hidden="true">/</i>
@@ -52,8 +52,8 @@ export function AxisPage({ axisId }: { axisId: string }) {
             <a
               className="card"
               key={item.name}
-              href={`#/${axis.axis}/${slug(item.name)}`}
-              onClick={(e) => { e.preventDefault(); navigate(`#/${axis.axis}/${slug(item.name)}`); }}
+              href={`/${axis.axis}/${slug(item.name)}`}
+              onClick={(e) => { e.preventDefault(); navigate(`/${axis.axis}/${slug(item.name)}`); }}
             >
               <span className="card-index">{String(index + 1).padStart(2, "0")}</span>
               <h2 className="card-title">{item.name}</h2>
@@ -86,17 +86,17 @@ export function OfferingPage({ axisId, itemSlug }: { axisId: string; itemSlug: s
   return (
     <div className="page">
       <div className="shell">
-        <Crumbs trail={[{ label: axis.label, href: `#/${axis.axis}` }, { label: item.name }]} />
+        <Crumbs trail={[{ label: axis.label, href: `/${axis.axis}` }, { label: item.name }]} />
 
         <header className="page-head detail-head">
           <span className="eyebrow">{axis.label}</span>
           <h1 className="display page-title">{item.name}</h1>
           <p className="lead page-sub">{item.outcome}</p>
           <div className="detail-actions">
-            <a className="btn btn-primary" href="#/contact" onClick={(e) => { e.preventDefault(); navigate("#/contact"); }}>
+            <a className="btn btn-primary" href="/contact" onClick={(e) => { e.preventDefault(); navigate("/contact"); }}>
               Discuss this <span className="arrow">↗</span>
             </a>
-            <a className="btn btn-ghost" href={`#/${axis.axis}`} onClick={(e) => { e.preventDefault(); navigate(`#/${axis.axis}`); }}>
+            <a className="btn btn-ghost" href={`/${axis.axis}`} onClick={(e) => { e.preventDefault(); navigate(`/${axis.axis}`); }}>
               All {axis.label}
             </a>
           </div>
@@ -147,11 +147,11 @@ export function OfferingPage({ axisId, itemSlug }: { axisId: string; itemSlug: s
               <h3>Related</h3>
               <div className="aside-links">
                 {related.map((rel) => (
-                  <a key={rel.name} href={`#/${axis.axis}/${slug(rel.name)}`} onClick={(e) => { e.preventDefault(); navigate(`#/${axis.axis}/${slug(rel.name)}`); }}>
+                  <a key={rel.name} href={`/${axis.axis}/${slug(rel.name)}`} onClick={(e) => { e.preventDefault(); navigate(`/${axis.axis}/${slug(rel.name)}`); }}>
                     {rel.name}
                   </a>
                 ))}
-                <a className="mega-all" href={`#/${axis.axis}`} onClick={(e) => { e.preventDefault(); navigate(`#/${axis.axis}`); }}>
+                <a className="mega-all" href={`/${axis.axis}`} onClick={(e) => { e.preventDefault(); navigate(`/${axis.axis}`); }}>
                   All {axis.label} →
                 </a>
               </div>
@@ -196,7 +196,7 @@ export function CataloguePage() {
 
         <nav className="subnav" aria-label="Jump to axis">
           {axes.map((axis) => (
-            <a key={axis.axis} href={`#/${axis.axis}`} onClick={(e) => { e.preventDefault(); navigate(`#/${axis.axis}`); }}>{axis.label}</a>
+            <a key={axis.axis} href={`/${axis.axis}`} onClick={(e) => { e.preventDefault(); navigate(`/${axis.axis}`); }}>{axis.label}</a>
           ))}
         </nav>
 
@@ -206,7 +206,7 @@ export function CataloguePage() {
           <section className="cat-section" key={axis.axis}>
             <div className="cat-head">
               <h2 className="h3">{axis.label}</h2>
-              <a className="link-underline" href={`#/${axis.axis}`} onClick={(e) => { e.preventDefault(); navigate(`#/${axis.axis}`); }}>
+              <a className="link-underline" href={`/${axis.axis}`} onClick={(e) => { e.preventDefault(); navigate(`/${axis.axis}`); }}>
                 Open {axis.label}
               </a>
             </div>
@@ -214,8 +214,8 @@ export function CataloguePage() {
               {items.map((item) => (
                 <a
                   key={item.name}
-                  href={`#/${axis.axis}/${slug(item.name)}`}
-                  onClick={(e) => { e.preventDefault(); navigate(`#/${axis.axis}/${slug(item.name)}`); }}
+                  href={`/${axis.axis}/${slug(item.name)}`}
+                  onClick={(e) => { e.preventDefault(); navigate(`/${axis.axis}/${slug(item.name)}`); }}
                 >
                   <span>
                     {item.name}
@@ -241,7 +241,7 @@ export function AboutPage({ section }: { section?: string }) {
   return (
     <div className="page">
       <div className="shell">
-        <Crumbs trail={[{ label: "About", href: "#/about" }, ...(section ? [{ label: title }] : [])]} />
+        <Crumbs trail={[{ label: "About", href: "/about" }, ...(section ? [{ label: title }] : [])]} />
         <nav className="subnav" aria-label="About sections">
           {[
             ["", "Why CyraOps"],
@@ -252,7 +252,7 @@ export function AboutPage({ section }: { section?: string }) {
             key === (section ?? "") ? (
               <span className="subnav-current" aria-current="page" key={key}>{label}</span>
             ) : (
-              <a key={key} href={`#/about${key ? `/${key}` : ""}`} onClick={(e) => { e.preventDefault(); navigate(`#/about${key ? `/${key}` : ""}`); }}>{label}</a>
+              <a key={key} href={`/about${key ? `/${key}` : ""}`} onClick={(e) => { e.preventDefault(); navigate(`/about${key ? `/${key}` : ""}`); }}>{label}</a>
             )
           )}
         </nav>
@@ -443,7 +443,7 @@ export function NotFound() {
           <h1 className="display page-title">Nothing <em>here.</em></h1>
           <p className="lead page-sub">That page does not exist. The catalogue is the best place to start.</p>
           <div className="detail-actions">
-            <a className="btn btn-primary" href="#/catalogue" onClick={(e) => { e.preventDefault(); navigate("#/catalogue"); }}>
+            <a className="btn btn-primary" href="/catalogue" onClick={(e) => { e.preventDefault(); navigate("/catalogue"); }}>
               Full catalogue
             </a>
           </div>

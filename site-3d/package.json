@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 3100",
     "build": "tsc -b && vite build",
-    "preview": "vite preview --port 3101"
+    "preview": "vite preview --port 3101",
+    "prerender": "node prerender.mjs",
+    "build:static": "npm run build && npm run prerender",
+    "publish": "node publish.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.6",

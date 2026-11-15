@@ -36,7 +36,7 @@ const group = (id: string, blurb: string, options?: { featured?: NavGroup["featu
       .filter((item) => !exclude.includes(item.name))
       .map((item) => ({
         label: item.name,
-        href: `#/${id}/${slug(item.name)}`,
+        href: `/${id}/${slug(item.name)}`,
         note: item.outcome.length > 62 ? `${item.outcome.slice(0, 59)}…` : item.outcome,
       })),
   };
@@ -48,7 +48,7 @@ export const NAV_GROUPS: NavGroup[] = [
   group("products", "One platform we run, and the tools we reuse on every build.", {
     featured: {
       label: "CyraOps CRM",
-      href: "#/products/cyraops-crm",
+      href: "/products/cyraops-crm",
       note: "Our own operations platform with an agent runtime — in production, not a demo.",
     },
     // The CRM is the featured card; don't also list it in the links column.
@@ -62,14 +62,14 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "About",
     blurb: "Who you are actually hiring, and how we work.",
     links: [
-      { label: "Why CyraOps", href: "#/about", note: "We run what we sell." },
-      { label: "How we work", href: "#/about/how", note: "Scope, prove, build, run." },
-      { label: "Ways of engaging", href: "#/about/engagement", note: "Project, retainer, or embedded." },
-      { label: "Frequently asked", href: "#/about/faq", note: "Platforms, access, pricing, support." },
+      { label: "Why CyraOps", href: "/about", note: "We run what we sell." },
+      { label: "How we work", href: "/about/how", note: "Scope, prove, build, run." },
+      { label: "Ways of engaging", href: "/about/engagement", note: "Project, retainer, or embedded." },
+      { label: "Frequently asked", href: "/about/faq", note: "Platforms, access, pricing, support." },
     ],
   },
   // The catalogue is important enough to be a top-level link, not a dropdown item.
-  { kind: "link", label: "Catalogue", blurb: "", links: [], plainHref: "#/catalogue" },
+  { kind: "link", label: "Catalogue", blurb: "", links: [], plainHref: "/catalogue" },
 ];
 
 export const ALL_OFFERINGS = axes.flatMap((axis) =>
@@ -78,7 +78,7 @@ export const ALL_OFFERINGS = axes.flatMap((axis) =>
     axisLabel: axis.label,
     name: item.name,
     outcome: item.outcome,
-    href: `#/${axis.axis}/${slug(item.name)}`,
+    href: `/${axis.axis}/${slug(item.name)}`,
   }))
 );
 

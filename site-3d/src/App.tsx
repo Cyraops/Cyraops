@@ -7,6 +7,7 @@ import { MegaNav } from "./components/MegaNav";
 import { AboutPage, AxisPage, CataloguePage, ContactPage, NotFound, OfferingPage } from "./components/Pages";
 import { NAV_GROUPS, ALL_OFFERINGS } from "./data/nav";
 import { navigate, segments, useRoute, useScrollTopOnRouteChange } from "./lib/router";
+import { applyMeta } from "./lib/meta";
 
 const Hero3D = lazy(() => import("./components/Hero3D").then((m) => ({ default: m.Hero3D })));
 
@@ -20,6 +21,9 @@ const MARQUEE = [
 
 export default function App() {
   const path = useRoute();
+
+  // Title, canonical and structured data follow the route.
+  useEffect(() => applyMeta(path), [path]);
   useScrollTopOnRouteChange(path);
   const lenisRef = useRef<Lenis | null>(null);
 
@@ -85,7 +89,8 @@ function Home({ lenisRef }: { lenisRef: React.MutableRefObject<Lenis | null> }) 
   };
 
   const jump = (event: React.MouseEvent<HTMLAnchorElement>, href: string) => {
-    if (href.startsWith("#/")) { event.preventDefault(); navigate(href); return; }
+    // Real paths route through the router; bare fragments scroll in-page.
+    if (href.startsWith("/")) { event.preventDefault(); navigate(href); return; }
     if (!href.startsWith("#")) return;
     const el = document.querySelector(href);
     if (!el) return;
@@ -109,8 +114,8 @@ function Home({ lenisRef }: { lenisRef: React.MutableRefObject<Lenis | null> }) 
               <h1 className="display hero-title">Pilots are easy.<br /><em>Production</em> is<br />the hard part.</h1>
               <p className="lead hero-sub">We build the data platforms, models and applications that survive real use — and we stay to run them. One small senior team, from the first pipeline to the incident at 2am.</p>
               <div className="hero-actions">
-                <a className="btn btn-primary" href="#/contact" onClick={(e) => jump(e, "#/contact")}>Start a conversation <span className="arrow">↗</span></a>
-                <a className="btn btn-ghost" href="#/catalogue" onClick={(e) => jump(e, "#/catalogue")}>See the catalogue</a>
+                <a className="btn btn-primary" href="/contact" onClick={(e) => jump(e, "/contact")}>Start a conversation <span className="arrow">↗</span></a>
+                <a className="btn btn-ghost" href="/catalogue" onClick={(e) => jump(e, "/catalogue")}>See the catalogue</a>
               </div>
             </div>
 
@@ -134,7 +139,7 @@ function Home({ lenisRef }: { lenisRef: React.MutableRefObject<Lenis | null> }) 
               ["The bill that creeps", "Cloud spend grows without attribution, and nobody can say what a workload costs or what it earns.", "functions"],
             ].map(([title, body, axis], i) => (
               <Reveal key={title} delay={i * 0.06}>
-                <a className="problem-card" href={`#/${axis}`} onClick={(e) => jump(e, `#/${axis}`)}>
+                <a className="problem-card" href={`/${axis}`} onClick={(e) => jump(e, `/${axis}`)}>
                   <span className="problem-num">{String(i + 1).padStart(2, "0")}</span>
                   <h3 className="problem-title">{title}</h3>
                   <p className="problem-body">{body}</p>
@@ -168,7 +173,7 @@ function Home({ lenisRef }: { lenisRef: React.MutableRefObject<Lenis | null> }) 
           <div className="axis-cards">
             {axes.map((axis, index) => (
               <Reveal key={axis.axis} delay={index * 0.04}>
-                <a className="axis-card" href={`#/${axis.axis}`} onClick={(e) => jump(e, `#/${axis.axis}`)}>
+                <a className="axis-card" href={`/${axis.axis}`} onClick={(e) => jump(e, `/${axis.axis}`)}>
                   <span className="axis-card-num">{String(index + 1).padStart(2, "0")}</span>
                   <h3 className="axis-card-title">{axis.label}</h3>
                   <p className="axis-card-sub">{axis.intro.sub}</p>
@@ -194,7 +199,7 @@ function Home({ lenisRef }: { lenisRef: React.MutableRefObject<Lenis | null> }) 
               <p className="body" style={{ marginTop: 22, maxWidth: "44ch" }}>
                 CyraOps CRM is our own product: an operations platform with an agent runtime, running daily on the same stack we build for clients. It has approvals, run history, replay and a cost ceiling because it had to have them in production. When we argue about what a system needs before you trust it, that is where the argument comes from.
               </p>
-              <a className="link-underline" href="#/about" onClick={(e) => jump(e, "#/about")} style={{ marginTop: 26, color: "var(--lime)" }}>About the practice</a>
+              <a className="link-underline" href="/about" onClick={(e) => jump(e, "/about")} style={{ marginTop: 26, color: "var(--lime)" }}>About the practice</a>
             </Reveal>
           </div>
           <div className="proof-facts">
@@ -225,7 +230,7 @@ function Footer() {
       <div className="shell">
         <div className="footer-grid">
           <div className="footer-col">
-            <a className="brand" href="#/" onClick={go("#/")} style={{ marginBottom: 12 }}><span className="brand-mark">C</span> CyraOps</a>
+            <a className="brand" href="/" onClick={go("/")} style={{ marginBottom: 12 }}><span className="brand-mark">C</span> CyraOps</a>
             <p className="small" style={{ maxWidth: "26ch" }}>Data, AI and platform engineering. Built, then operated.</p>
           </div>
           {axisGroups.slice(0, 4).map((group) => (
@@ -249,19 +254,19 @@ function Footer() {
           </div>
           <div className="footer-col">
             <h4>Company</h4>
-            <a href="#/catalogue" onClick={go("#/catalogue")}>Full catalogue</a>
-            <a href="#/contact" onClick={go("#/contact")}>Contact</a>
+            <a href="/catalogue" onClick={go("/catalogue")}>Full catalogue</a>
+            <a href="/contact" onClick={go("/contact")}>Contact</a>
           </div>
           <div className="footer-col">
             <h4>Elsewhere</h4>
             <a href="mailto:hello@cyraops.com">hello@cyraops.com</a>
-            <a href="https://www.cyraops.com/" target="_blank" rel="noreferrer">Live site</a>
+            <a href="https://www.cyraops.com/">www.cyraops.com</a>
           </div>
         </div>
 
         <div className="footer-bottom">
           <span>© {new Date().getFullYear()} CyraOps</span>
-          <span>Local development build — not published</span>
+          <span>Data, AI and platform engineering</span>
         </div>
       </div>
     </footer>

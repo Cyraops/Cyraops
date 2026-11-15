@@ -102,10 +102,10 @@ export function MegaNav() {
       <header className={`nav ${scrolled ? "is-scrolled" : ""} ${collapsed ? "is-collapsed" : ""}`} ref={navRef}>
         <a
           className="brand"
-          href="#/"
+          href="/"
           onClick={(e) => {
             e.preventDefault();
-            go("#/");
+            go("/");
           }}
           aria-label="CyraOps home"
         >
@@ -153,13 +153,13 @@ export function MegaNav() {
         </nav>
 
         <div className="nav-cta">
-          <span className="nav-progress" aria-hidden="true">{String(progress).padStart(2, "0")}%</span>
+          <span className="nav-progress" aria-hidden="true">{progress}%</span>
           <a
             className="btn btn-primary"
-            href="#/contact"
+            href="/contact"
             onClick={(e) => {
               e.preventDefault();
-              go("#/contact");
+              go("/contact");
             }}
             style={{ height: 40, padding: "0 18px" }}
           >
@@ -234,10 +234,10 @@ function MegaPanel({ group, onGo, left }: { group: NavGroup; onGo: (href: string
           </div>
           <a
             className="mega-all"
-            href={group.label === "About" ? "#/about" : `#/${group.links[0]?.href.split("/")[1] ?? ""}`}
+            href={group.label === "About" ? "/about" : `/${group.links[0]?.href.split("/")[1] ?? ""}`}
             onClick={(e) => {
               e.preventDefault();
-              onGo(group.label === "About" ? "#/about" : `#/${group.links[0]?.href.split("/")[1] ?? ""}`);
+              onGo(group.label === "About" ? "/about" : `/${group.links[0]?.href.split("/")[1] ?? ""}`);
             }}
           >
             {group.label === "About" ? "About CyraOps" : `View all ${group.label.toLowerCase()}`} <span aria-hidden="true">→</span>
