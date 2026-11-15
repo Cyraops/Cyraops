@@ -179,3 +179,26 @@ git config user.email "Sales@cyraops.com"
 email address, and only if that address is verified on the account. If `Sales@cyraops.com`
 is not verified on the hosting account, the commits will still push but will show as
 unlinked. Verify the address in the account settings first.
+
+---
+
+## Troubleshooting the first push
+
+`git push` can fail with `RPC failed; HTTP 400` and `send-pack: unexpected
+disconnect while reading sideband packet` on GitHub over HTTPS. This is an HTTP/2
+negotiation problem in older git builds (2.39 on macOS hits it), not a permissions
+problem — `git ls-remote` works and the token or key is valid.
+
+```bash
+git -c http.version=HTTP/1.1 -c http.postBuffer=524288000 push -u origin dev
+```
+
+Add the same flags to the remaining pushes, or persist them for this repository:
+
+```bash
+git config http.version HTTP/1.1
+git config http.postBuffer 524288000
+```
+
+Pushing over SSH does not hit this, which is the main reason the documented remote is
+the SSH URL.
