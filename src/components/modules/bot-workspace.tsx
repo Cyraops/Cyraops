@@ -1,0 +1,1710 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Bot, Check, ChevronDown, Clock, Copy, CornerDownLeft, FileText, Globe, MessageSquare, Mic, MicOff, Paperclip, Plus, RefreshCw, Sparkles, Square, Trash2, Users, Volume2, VolumeX, Wrench, X } from "lucide-react";
+import { RoutinesModal } from "@/components/routines/routines-modal";
+import { Markdown } from "@/components/ai/markdown";
+import { parseToolSteps, ToolActivity, type ToolStep } from "@/components/ai/tool-activity";
+import { PagesBrowser, PagesPanel, type OpenPage, type PageMeta } from "@/components/ai/pages-panel";
+import { BrowserPanel } from "@/components/ai/browser-panel";
+import { CommandPalette } from "@/components/ai/command-palette";
+import { AskBlock, FileBlock, StepBlock, TextBlock, toBlocks } from "@/components/ai/blocks";
+import { BotOrb } from "@/components/ai/bot-avatar";
+
+interface ChatItem {
+  id: string;
+  /** Set on optimistic rows so a failed send can find and remove them. */
+  clientId?: string;
+  role: "user" | "assistant";
+  content: string;
+  toolCalls?: string | null;
+  attachments?: string | null;
+  createdAt?: string;
+  /** True only while this reply is still arriving. */
+  streaming?: boolean;
+  /** Wall-clock time the turn's tools took. */
+  toolDurationMs?: number;
+}
+
+interface MemoryItem {
+  id: string;
+  content: string;
+  updatedAt: string;
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  updatedAt: string;
+}
+
+const TOOL_LABELS: Array<{ id: string; label: string }> = [
+  { id: "search_leads", label: "Leads" },
+  { id: "search_deals", label: "Deals" },
+  { id: "search_contacts", label: "Contacts" },
+  { id: "search_companies", label: "Companies" },
+  { id: "search_tasks", label: "Tasks" },
+  { id: "get_sales_report", label: "Sales report" },
+  { id: "get_pipeline_report", label: "Pipeline report" },
+  { id: "generate_management_report", label: "Management report" },
+  { id: "search_documents", label: "Documents" },
+  { id: "summarize_thread", label: "Email threads" },
+];
+
+export function BotWorkspace() {
+  const router = useRouter();
+  const [spaces, setSpaces] = useState<Array<{ id: string; label: string }>>([]);
+  const [assistantId, setAssistantId] = useState("");
+  const [assistantName, setAssistantName] = useState("Cyraops Assistant");
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationId, setConversationId] = useState("");
+  const [conversationTitle, setConversationTitle] = useState("New chat");
+  const [messages, setMessages] = useState<ChatItem[]>([]);
+  const [memories, setMemories] = useState<MemoryItem[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [listening, setListening] = useState(false);
+  const [speakReplies, setSpeakReplies] = useState(false);
+  const [model, setModel] = useState("deepseek-flash");
+  const [models, setModels] = useState<Array<{ id: string; label: string }>>([
+    { id: "deepseek-flash", label: "DeepSeek V4 Flash" },
+    { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro" },
+  ]);
+  const [pendingAction, setPendingAction] = useState<{
+    id: string;
+    toolName: string;
+    summary: string;
+    reason?: string;
+    canAlwaysAllow?: boolean;
+    answered?: "allow" | "deny";
+  } | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+  /** Null = the personal assistant. Otherwise the AI teammate being talked to. */
+  const [activeAgent, setActiveAgent] = useState<string | null>(null);
+  const [teammates, setTeammates] = useState<
+    Array<{ slug: string; name: string; role: string; description: string; status?: string }>
+  >([]);
+  const [brief, setBrief] = useState<{
+    user: { name: string | null; role: string };
+    assistant: { name: string; model: string };
+    pipeline: { deals: number; value: number; stalled: number };
+    work: { overdue: number; dueToday: number; nextTask: string | null };
+    leads: { goingCold: number };
+    pages: Array<{ id: string; title: string }>;
+    goals: Array<{ id: string; title: string; status: string; round: number; maxRounds: number }>;
+    routines: Array<{ id: string; name: string; nextRunAt: string | null }>;
+    isEmpty: boolean;
+  } | null>(null);
+  const [approvalMode, setApprovalMode] = useState<"ASK" | "AUTO" | "NEVER">("ASK");
+  const [approvalRules, setApprovalRules] = useState<Array<{ toolName: string; effect: string }>>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [renamingId, setRenamingId] = useState("");
+  const [renameDraft, setRenameDraft] = useState("");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const followingRef = useRef(true);
+  const [atEnd, setAtEnd] = useState(true);
+  const [routinesOpen, setRoutinesOpen] = useState(false);
+  const [attachments, setAttachments] = useState<Array<{ id: string; name: string; mimeType: string; size: number; url: string }>>([]);
+  const [uploading, setUploading] = useState(false);
+  const [copiedId, setCopiedId] = useState("");
+  const [pages, setPages] = useState<PageMeta[]>([]);
+  const [openPage, setOpenPage] = useState<OpenPage | null>(null);
+  const [pagesBrowserOpen, setPagesBrowserOpen] = useState(false);
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const speakRepliesRef = useRef(false);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const meta = event.metaKey || event.ctrlKey;
+      if (meta && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+      if (meta && event.key.toLowerCase() === "i") {
+        event.preventDefault();
+        textareaRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const loadPages = useCallback(async (): Promise<PageMeta[]> => {
+    try {
+      const response = await fetch("/api/pages");
+      const data = await response.json();
+      const list: PageMeta[] = Array.isArray(data.pages) ? data.pages : [];
+      setPages(list);
+      return list;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const showPage = useCallback(async (id: string) => {
+    try {
+      const response = await fetch(`/api/pages/${id}`);
+      const data = await response.json();
+      if (data.page) {
+        setOpenPage(data.page);
+        setPagesBrowserOpen(false);
+      }
+    } catch {
+      // the panel simply stays closed
+    }
+  }, []);
+
+  const deleteConversation = async (id: string) => {
+    setConversations((list) => list.filter((item) => item.id !== id));
+    if (id === conversationId) {
+      setConversationId("");
+      setMessages([]);
+      setConversationTitle("New chat");
+      setPendingAction(null);
+    }
+    try {
+      await fetch(`/api/assistant/conversations/${id}`, { method: "DELETE" });
+    } catch {
+      void loadConversations();
+    }
+  };
+
+  const renameConversation = async (id: string, title: string) => {
+    const next = title.trim().slice(0, 120);
+    setRenamingId("");
+    if (!next) return;
+    setConversations((list) => list.map((item) => (item.id === id ? { ...item, title: next } : item)));
+    try {
+      await fetch(`/api/assistant/conversations/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: next }),
+      });
+    } catch {
+      void loadConversations();
+    }
+  };
+
+  const pinConversation = async (id: string, pinned: boolean) => {
+    setConversations((list) =>
+      list.map((item) => (item.id === id ? { ...item, pinnedAt: pinned ? new Date().toISOString() : null } : item))
+    );
+    await fetch(`/api/assistant/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned }),
+    }).catch(() => void loadConversations());
+  };
+
+  const archiveConversation = async (id: string, archived: boolean) => {
+    setConversations((list) =>
+      list.map((item) => (item.id === id ? { ...item, archivedAt: archived ? new Date().toISOString() : null } : item))
+    );
+    await fetch(`/api/assistant/conversations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived }),
+    }).catch(() => void loadConversations());
+  };
+
+  useEffect(() => {
+    // Switching teammate must re-scope the whole conversation list, not just
+    // relabel the header.
+    let alive = true;
+    void (async () => {
+      const url = activeAgent
+        ? `/api/assistant/conversations?agent=${encodeURIComponent(activeAgent)}`
+        : "/api/assistant/conversations";
+      const data = await fetch(url).then((response) => response.json()).catch(() => ({}));
+      if (!alive) return;
+      const list = Array.isArray(data.conversations) ? data.conversations : [];
+      setConversations(list);
+      if (list[0]) await loadConversation(list[0].id);
+      else {
+        setConversationId("");
+        setMessages([]);
+        setConversationTitle(
+          activeAgent ? teammates.find((mate) => mate.slug === activeAgent)?.name ?? "Teammate" : "New chat"
+        );
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeAgent]);
+
+  const loadTeammates = useCallback(async () => {
+    try {
+      const response = await fetch("/api/ai/agents");
+      const data = await response.json();
+      const agents = Array.isArray(data.agents) ? data.agents : [];
+      setTeammates(
+        agents
+          .filter((agent: any) => agent?.slug && agent.slug !== "chief_of_staff")
+          .map((agent: any) => ({
+            slug: agent.slug,
+            name: agent.name,
+            role: agent.role ?? "",
+            description: agent.description ?? "",
+            status: agent.status,
+          }))
+      );
+    } catch {
+      /* the roster is optional */
+    }
+  }, []);
+
+  const loadBrief = useCallback(async () => {
+    try {
+      const response = await fetch("/api/assistant/today");
+      if (!response.ok) return;
+      setBrief(await response.json());
+    } catch {
+      /* the brief is a convenience; the composer still works without it */
+    }
+  }, []);
+
+  const loadApprovalSettings = useCallback(async () => {
+    try {
+      const response = await fetch("/api/assistant/me");
+      const data = await response.json();
+      if (data.assistant?.approvalMode) setApprovalMode(data.assistant.approvalMode);
+      if (Array.isArray(data.approvalRules)) setApprovalRules(data.approvalRules);
+    } catch {
+      /* settings are optional */
+    }
+  }, []);
+
+  const saveApprovalMode = async (mode: "ASK" | "AUTO" | "NEVER") => {
+    setApprovalMode(mode);
+    try {
+      await fetch("/api/assistant/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ approvalMode: mode }),
+      });
+    } catch {
+      setError("Could not save the approval mode.");
+    }
+  };
+
+  const removeRule = async (toolName: string) => {
+    setApprovalRules((rules) => rules.filter((rule) => rule.toolName !== toolName));
+    try {
+      await fetch("/api/assistant/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ removeRuleFor: toolName }),
+      });
+    } catch {
+      void loadApprovalSettings();
+    }
+  };
+
+  const loadMemories = useCallback(async () => {
+    try {
+      const response = await fetch("/api/assistant/memories");
+      const data = await response.json();
+      if (Array.isArray(data.memories)) setMemories(data.memories);
+    } catch {
+      // memory panel is optional
+    }
+  }, []);
+
+  const loadSpaces = useCallback(async () => {
+    try {
+      const response = await fetch("/api/conversations");
+      const data = await response.json();
+      const groups = Array.isArray(data.conversations)
+        ? data.conversations.filter((conversation: any) => conversation.type === "GROUP")
+        : [];
+      setSpaces(groups.map((conversation: any) => ({ id: conversation.id, label: conversation.label || "Group" })));
+    } catch {
+      // spaces list is best-effort
+    }
+  }, []);
+
+  const loadConversations = useCallback(async () => {
+    try {
+      const url = activeAgent
+        ? `/api/assistant/conversations?agent=${encodeURIComponent(activeAgent)}`
+        : "/api/assistant/conversations";
+      const response = await fetch(url);
+      const data = await response.json();
+      if (Array.isArray(data.conversations)) setConversations(data.conversations);
+    } catch {
+      // list is best-effort
+    }
+  }, [activeAgent]);
+
+  /** Switching teammate switches the whole thread, not just the label. */
+  const selectAgent = useCallback(
+    (slug: string | null) => {
+      setActiveAgent(slug);
+      setConversationId("");
+      setMessages([]);
+      setPendingAction(null);
+      setConversationTitle(slug ? teammates.find((mate) => mate.slug === slug)?.name ?? "Teammate" : "New chat");
+    },
+    [teammates]
+  );
+
+  const loadConversation = useCallback(
+    async (id: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [me, history] = await Promise.all([
+          fetch("/api/assistant/me").then((r) => r.json()),
+          fetch(`/api/assistant/messages?conversationId=${encodeURIComponent(id)}`).then((r) => r.json()),
+        ]);
+        setAssistantId(me.assistant?.id || history.assistantId || "");
+        if (history.assistantName) setAssistantName(history.assistantName);
+        if (me.assistant?.model) setModel(me.assistant.model);
+        try {
+          const modelResponse = await fetch("/api/assistant/models").then((r) => r.json());
+          if (Array.isArray(modelResponse.models) && modelResponse.models.length > 0) {
+            setModels(modelResponse.models.map((entry: any) => ({ id: entry.id, label: entry.label })));
+          }
+        } catch {
+          // keep the built-in list
+        }
+        if (history.conversation) {
+          setConversationId(history.conversation.id);
+          setConversationTitle(history.conversation.title || "New chat");
+        }
+        setMessages(
+          Array.isArray(history.messages)
+            ? history.messages.map((message: any) => ({
+                id: message.id,
+                role: message.role,
+                content: message.content,
+                toolCalls: message.toolCalls,
+                attachments: message.attachments,
+                createdAt: message.createdAt,
+              }))
+            : []
+        );
+        void loadMemories();
+      } catch {
+        setError("Could not load your assistant.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loadMemories]
+  );
+
+  useEffect(() => {
+    void (async () => {
+      await loadConversations();
+      await loadSpaces();
+      await loadApprovalSettings();
+      await loadBrief();
+      await loadTeammates();
+      const list = await fetch("/api/assistant/conversations").then((r) => r.json()).catch(() => ({}));
+      const first = list.conversations?.[0];
+      if (first) {
+        await loadConversation(first.id);
+      } else {
+        const history = await fetch("/api/assistant/messages").then((r) => r.json()).catch(() => ({}));
+        await loadConversation(history.conversation?.id || "");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    speakRepliesRef.current = speakReplies;
+  }, [speakReplies]);
+
+  const atBottom = useCallback((el: HTMLElement) => el.scrollHeight - el.scrollTop - el.clientHeight < 80, []);
+
+  const SLASH_COMMANDS = [
+    { command: "/new", label: "Start a new chat", run: () => void newChat() },
+    { command: "/pages", label: "Open pages", run: () => { void loadPages(); setPagesBrowserOpen(true); } },
+    { command: "/browser", label: "Open the live browser", run: () => setBrowserOpen(true) },
+    { command: "/routines", label: "Open routines", run: () => setRoutinesOpen(true) },
+  ];
+  const slashMatches = input.startsWith("/")
+    ? SLASH_COMMANDS.filter((entry) => entry.command.startsWith(input.trim().split(" ")[0]))
+    : [];
+  const runSlash = (command: string) => {
+    const entry = SLASH_COMMANDS.find((item) => item.command === command);
+    setInput("");
+    entry?.run();
+  };
+
+  // Grow with the text instead of asking the user to drag a resize handle.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "0px";
+    el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
+  }, [input]);
+
+  // A dropped stream or a closed tab must not lose what was typed.
+  const draftKey = `cyraops:draft:${conversationId || "new"}`;
+  useEffect(() => {
+    if (!input) return;
+    try {
+      window.localStorage.setItem(draftKey, input);
+    } catch {
+      /* storage may be unavailable */
+    }
+  }, [input, draftKey]);
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(draftKey);
+      if (saved) setInput(saved);
+    } catch {
+      /* storage may be unavailable */
+    }
+    // Keyed on the conversation only: re-reading on every keystroke would fight the user.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey]);
+
+  useEffect(() => {
+    // Only follow the tail while the reader is already at the bottom, so
+    // scrolling up to read is never yanked back by an arriving token.
+    const el = scrollRef.current;
+    if (!el) return;
+    if (followingRef.current) el.scrollTo({ top: el.scrollHeight });
+    setAtEnd(atBottom(el));
+  }, [messages, busy, atBottom]);
+
+  const stopListening = useCallback(() => {
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      // already stopped
+    }
+    recognitionRef.current = null;
+    setListening(false);
+  }, []);
+
+  const toggleListening = useCallback(() => {
+    if (listening) {
+      stopListening();
+      return;
+    }
+    const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      setError("This browser cannot do voice input. Chrome or Safari work best.");
+      return;
+    }
+    setError(null);
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = navigator.language?.toLowerCase().startsWith("hi") ? "hi-IN" : "en-IN";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        transcript += event.results[i][0].transcript;
+      }
+      if (transcript.trim()) setInput(transcript);
+    };
+    recognition.onerror = () => setListening(false);
+    recognition.onend = () => setListening(false);
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+      setError("Could not start the microphone. Check browser permissions.");
+    }
+  }, [listening, stopListening]);
+
+  const speak = useCallback((text: string) => {
+    if (!speakRepliesRef.current) return;
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text.slice(0, 1200));
+      const isHindi = /[\u0900-\u097F]/.test(text);
+      utterance.lang = isHindi ? "hi-IN" : "en-IN";
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = isHindi
+        ? voices.find((voice) => voice.lang?.toLowerCase().startsWith("hi"))
+        : voices.find((voice) => voice.lang === "en-IN") || voices.find((voice) => /IN/.test(voice.lang || ""));
+      if (preferred) utterance.voice = preferred;
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // speech synthesis is optional
+    }
+  }, []);
+
+  const uploadFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    setError(null);
+    try {
+      for (const file of Array.from(files).slice(0, 3)) {
+        const form = new FormData();
+        form.append("file", file);
+        const response = await fetch("/api/assistant/upload", { method: "POST", body: form });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Upload failed");
+        setAttachments((prev) => [...prev, data.attachment]);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Could not upload the file.");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const newChat = useCallback(async () => {
+    try {
+      const response = await fetch("/api/assistant/conversations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(activeAgent ? { agentSlug: activeAgent } : {}),
+      });
+      const data = await response.json();
+      if (data.conversation?.id) {
+        await loadConversation(data.conversation.id);
+        await loadConversations();
+      }
+    } catch {
+      setError("Could not start a new chat.");
+    }
+  }, [loadConversation, loadConversations, activeAgent]);
+
+  const selectConversation = useCallback(
+    (id: string) => {
+      void loadConversation(id);
+    },
+    [loadConversation]
+  );
+
+  const send = async () => {
+    const content = input.trim();
+    if (!content || busy) return;
+
+    setInput("");
+    try {
+      window.localStorage.removeItem(draftKey);
+    } catch {
+      /* storage may be unavailable */
+    }
+    setBusy(true);
+    setError(null);
+    const sentAttachments = attachments;
+    setAttachments([]);
+    const pendingId = `pending_${Date.now()}`;
+    const localClientId = `client_${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      { id: `local_${Date.now()}`, clientId: localClientId, role: "user", content, createdAt: new Date().toISOString(), attachments: sentAttachments.length ? JSON.stringify(sentAttachments) : null },
+      { id: pendingId, clientId: localClientId, role: "assistant", content: "", createdAt: new Date().toISOString(), streaming: true },
+    ]);
+
+    let replyText = "";
+    let toolCallsUsed: string[] = [];
+    const steps: ToolStep[] = [];
+    const turnStartedAt = Date.now();
+    const pushSteps = () =>
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === pendingId ? { ...message, toolCalls: JSON.stringify(steps) } : message
+        )
+      );
+    let nextPending: { id: string; toolName: string; summary: string } | null = null;
+
+    try {
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const response = await fetch("/api/assistant/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          assistantId: assistantId || undefined,
+          conversationId: conversationId || undefined,
+          content,
+          agentSlug: activeAgent ?? undefined,
+          attachmentIds: attachments.map((a) => a.id),
+        }),
+      });
+
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "The assistant failed to reply.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data:")) continue;
+          let payload: any;
+          try {
+            payload = JSON.parse(line.slice(5).trim());
+          } catch {
+            continue;
+          }
+
+          if (payload.type === "token") {
+            replyText += payload.content;
+            setMessages((prev) => prev.map((message) => (message.id === pendingId ? { ...message, content: replyText } : message)));
+          } else if (payload.type === "tool") {
+            // Show the step the moment it starts, not after the turn ends.
+            if (!toolCallsUsed.includes(payload.name)) toolCallsUsed.push(payload.name);
+            const existing = steps.filter((step) => step.name === payload.name && step.status !== "running");
+            const previousCount = existing.reduce((total, step) => total + step.count, 0);
+            steps.push({ name: payload.name, status: "running", count: previousCount + 1 });
+            pushSteps();
+          } else if (payload.type === "tool_done") {
+            const running = [...steps].reverse().find((step) => step.name === payload.name && step.status === "running");
+            if (running) {
+              running.status = payload.ok === false ? "failed" : "done";
+              running.durationMs = payload.durationMs;
+            }
+            pushSteps();
+          } else if (payload.type === "done") {
+            if (payload.reply) replyText = payload.reply;
+            toolCallsUsed = Array.isArray(payload.toolCallsUsed) ? payload.toolCallsUsed : [];
+            if (payload.pendingAction) nextPending = payload.pendingAction;
+            if (payload.conversationId) setConversationId(payload.conversationId);
+          } else if (payload.type === "error") {
+            throw new Error(payload.error || "The assistant failed to reply.");
+          }
+        }
+      }
+
+      for (const step of steps) if (step.status === "running") step.status = "done";
+      const stepDuration = Date.now() - turnStartedAt;
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.id === pendingId
+            ? {
+                ...message,
+                content: replyText || "_(stopped)_",
+                toolCalls: JSON.stringify(steps.length ? steps : toolCallsUsed),
+                streaming: false,
+                toolDurationMs: stepDuration,
+              }
+            : message
+        )
+      );
+      if (nextPending) setPendingAction(nextPending);
+      speak(replyText);
+      void loadMemories();
+      void loadConversations();
+      // A page tool ran during this turn — surface the result immediately.
+      if (toolCallsUsed.some((tool) => /browser|navigate|screenshot/i.test(tool))) setBrowserOpen(true);
+      if (toolCallsUsed.some((tool) => tool === "create_page" || tool === "update_page")) {
+        const list = await loadPages();
+        if (list[0]) await showPage(list[0].id);
+      }
+    } catch (err: any) {
+      if (err?.name === "AbortError") {
+        // Stopped on purpose: keep whatever arrived.
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === pendingId
+              ? { ...message, content: replyText ? `${replyText}\n\n_(stopped)_` : "_(stopped)_", streaming: false }
+              : message
+          )
+        );
+      } else {
+        // Nothing was persisted, so drop the optimistic pair too and hand the
+        // text back instead of silently losing what the user typed.
+        setMessages((prev) =>
+          prev.filter((message) => message.id !== pendingId && message.clientId !== localClientId)
+        );
+        setInput((current) => current || content);
+        setError(err?.message || "The assistant failed to reply.");
+      }
+    } finally {
+      abortRef.current = null;
+      setBusy(false);
+    }
+  };
+
+  const forget = async (memoryId: string) => {
+    try {
+      const response = await fetch(`/api/assistant/memories?id=${encodeURIComponent(memoryId)}`, { method: "DELETE" });
+      if (response.ok) setMemories((prev) => prev.filter((memory) => memory.id !== memoryId));
+    } catch {
+      // ignore
+    }
+  };
+
+  const decide = async (approve: boolean, alwaysAllow = false) => {
+    if (!pendingAction) return;
+    const actionId = pendingAction.id;
+    // The card stays where it is, marked as answered, so the transcript still
+    // explains what happened instead of the decision vanishing.
+    setPendingAction((current) => (current ? { ...current, answered: approve ? "allow" : "deny" } : current));
+    try {
+      const response = await fetch("/api/assistant/actions/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actionId, approve, alwaysAllow }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || (approve && data.status && data.status !== "EXECUTED")) {
+        // Revert the card so it stays actionable, and say what actually happened.
+        setPendingAction((current) => (current ? { ...current, answered: undefined } : current));
+        setError(data.error || (data.status === "FAILED" ? `${data.toolName || "That action"} failed to run.` : "That action could not be completed."));
+        return;
+      }
+      const base = approve
+        ? `✅ ${data.result?.data?.message || `${data.toolName ?? "Action"} completed.`}`
+        : `↩️ Rejected: ${data.toolName ?? "action"}.`;
+      const note = approve && alwaysAllow ? `${base} I won't ask about this again.` : base;
+      setMessages((prev) => [...prev, { id: `sys_${Date.now()}`, role: "assistant", content: note }]);
+      if (approve) void loadConversations();
+    } catch {
+      setPendingAction((current) => (current ? { ...current, answered: undefined } : current));
+      setError("Could not process the action.");
+    }
+  };
+
+  const changeModel = async (nextModel: string) => {
+    setModel(nextModel);
+    try {
+      await fetch("/api/assistant/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: nextModel }),
+      });
+    } catch {
+      // revert on failure is unnecessary; next load reflects server state
+    }
+  };
+
+  const toolChips = (toolCalls: string | null | undefined): string[] => {
+    if (!toolCalls) return [];
+    try {
+      const parsed = JSON.parse(toolCalls);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const formatTime = (iso?: string): string => {
+    if (!iso) return "";
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  };
+
+  const dayLabel = (iso?: string): string => {
+    if (!iso) return "";
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "";
+    const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+    if (sameDay(date, new Date())) return "Today";
+    if (sameDay(date, new Date(Date.now() - 86_400_000))) return "Yesterday";
+    return date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  };
+
+  /** Indian short scale, so a pipeline value reads at a glance. */
+  const shortMoney = (value: number): string => {
+    if (!Number.isFinite(value) || value <= 0) return "₹0";
+    if (value >= 1e7) return `₹${(value / 1e7).toFixed(1)} Cr`;
+    if (value >= 1e5) return `₹${(value / 1e5).toFixed(1)} L`;
+    if (value >= 1e3) return `₹${Math.round(value / 1e3)}k`;
+    return `₹${Math.round(value)}`;
+  };
+
+  const copyMessage = async (id: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(""), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
+  // Untitled conversations are clutter — every real chat gets a title from its
+  // first message, so hide the empty ones except the one being edited.
+  const visibleConversations = conversations
+    .filter((conversation) => conversation.title !== "New chat" || conversation.id === conversationId)
+    .filter((conversation) => (showArchived ? Boolean((conversation as any).archivedAt) : !(conversation as any).archivedAt))
+    .filter((conversation) =>
+      searchQuery.trim() ? conversation.title.toLowerCase().includes(searchQuery.trim().toLowerCase()) : true
+    );
+
+  // Prompts chosen from what is actually true, so the first screen is about
+  // this business rather than a generic demo.
+  const SUGGESTIONS: string[] = (() => {
+    if (!brief) return ["What needs my attention today?"];
+    const out: string[] = [];
+    if (brief.pipeline.stalled > 0) out.push("Which deals are stalling, and what should I do about them?");
+    if (brief.work.overdue > 0) out.push("What is overdue and what should I do first?");
+    if (brief.leads.goingCold > 0) out.push("Which leads have gone quiet and how should I re-open them?");
+    if (brief.pipeline.deals > 0) out.push("Build me a pipeline dashboard I can share");
+    if (out.length < 2) out.push("Draft a follow-up for my quietest deal");
+    return out.slice(0, 4);
+  })();
+
+  return (
+    <div className="relative grid h-[calc(100dvh-62px)] w-full grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_260px]">
+      {/* Left rail — conversations */}
+      <aside className="hidden min-h-0 flex-col border-r border-[var(--border)] md:flex">
+        <div className="flex items-center justify-between border-b border-[var(--border)] p-3">
+          <p className="text-caption font-bold uppercase tracking-widest text-[var(--muted)]">Cyraops Bot</p>
+          <button
+            onClick={() => void newChat()}
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
+            title="New chat"
+            aria-label="New chat"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+
+        {/* The team: your assistant plus every AI teammate, each with its own thread */}
+        <div className="border-b border-[var(--border)] px-2 py-2">
+          <button
+            onClick={() => selectAgent(null)}
+            className={`flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition ${
+              activeAgent === null ? "bg-accent/10" : "hover:bg-[var(--hover)]"
+            }`}
+          >
+            <BotOrb size={24} />
+            <span className="min-w-0">
+              <span className="block truncate text-meta font-bold text-[var(--text)]">{assistantName}</span>
+              <span className="block truncate text-caption text-[var(--muted)]">Personal · remembers you</span>
+            </span>
+          </button>
+
+          {teammates.length > 0 && (
+            <>
+              <p className="mt-2 px-1.5 text-caption font-bold uppercase tracking-widest text-[var(--muted)]">
+                AI teammates
+              </p>
+              <div className="mt-1 space-y-0.5">
+                {teammates.map((mate) => (
+                  <button
+                    key={mate.slug}
+                    onClick={() => selectAgent(mate.slug)}
+                    className={`flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition ${
+                      activeAgent === mate.slug ? "bg-accent/10" : "hover:bg-[var(--hover)]"
+                    }`}
+                    title={mate.description}
+                  >
+                    <span className="relative flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-[var(--muted)]">
+                      <Users size={11} />
+                      <span
+                        className={`absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full ${
+                          mate.status === "ACTIVE" ? "bg-emerald-500" : "bg-[var(--muted)]"
+                        }`}
+                      />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-meta font-medium text-[var(--text)]">{mate.name}</span>
+                      <span className="block truncate text-[10px] text-[var(--muted)]">{mate.role}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="hidden">
+          <span className="min-w-0">
+            <span className="block truncate text-meta font-bold text-[var(--text)]">{assistantName}</span>
+            <span className="block text-caption text-[var(--muted)]">Personal · remembers you</span>
+          </span>
+        </div>
+
+        <div className="px-2 pb-1">
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search chats…"
+            aria-label="Search conversations"
+            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-meta outline-none placeholder:text-[var(--muted)] focus:border-accent"
+          />
+          <button
+            onClick={() => setShowArchived((value) => !value)}
+            className="mt-1 w-full rounded-md px-1 py-0.5 text-left text-caption font-semibold text-[var(--muted)] transition hover:text-[var(--text)]"
+          >
+            {showArchived ? "← Back to chats" : "Show archived"}
+          </button>
+        </div>
+        <div className="soft-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
+          {visibleConversations.length === 0 ? (
+            <p className="px-2 py-4 text-center text-meta text-[var(--muted)]">No chats yet</p>
+          ) : (
+            <div className="space-y-0.5">
+              {visibleConversations.map((conversation) => (
+                <div
+                  key={conversation.id}
+                  className={`group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 transition ${
+                    conversation.id === conversationId ? "bg-[#f0efff] dark:bg-[#302c4e]" : "hover:bg-[var(--hover)]"
+                  }`}
+                >
+                  <MessageSquare size={13} className="shrink-0 text-[var(--muted)]" />
+                  {renamingId === conversation.id ? (
+                    <input
+                      autoFocus
+                      value={renameDraft}
+                      onChange={(event) => setRenameDraft(event.target.value)}
+                      onBlur={() => void renameConversation(conversation.id, renameDraft)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") void renameConversation(conversation.id, renameDraft);
+                        if (event.key === "Escape") setRenamingId("");
+                      }}
+                      aria-label="Rename conversation"
+                      className="min-w-0 flex-1 rounded border border-accent bg-[var(--surface)] px-1 py-0.5 text-meta outline-none"
+                    />
+                  ) : (
+                    <button
+                      onClick={() => selectConversation(conversation.id)}
+                      onDoubleClick={() => {
+                        setRenamingId(conversation.id);
+                        setRenameDraft(conversation.title);
+                      }}
+                      className="min-w-0 flex-1 truncate text-left text-meta font-medium text-[var(--text)]"
+                      title="Double-click to rename"
+                    >
+                      {conversation.title}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      setRenamingId(conversation.id);
+                      setRenameDraft(conversation.title);
+                    }}
+                    className="shrink-0 rounded p-0.5 text-[var(--muted)] opacity-0 transition hover:text-[var(--text)] focus:opacity-100 group-hover:opacity-100"
+                    aria-label={`Rename ${conversation.title}`}
+                  >
+                    <FileText size={11} />
+                  </button>
+                  <button
+                    onClick={() => void pinConversation(conversation.id, !(conversation as any).pinnedAt)}
+                    className={`shrink-0 rounded p-0.5 transition hover:text-accent focus:opacity-100 group-hover:opacity-100 ${
+                      (conversation as any).pinnedAt ? "text-accent opacity-100" : "text-[var(--muted)] opacity-0"
+                    }`}
+                    aria-label={`${(conversation as any).pinnedAt ? "Unpin" : "Pin"} ${conversation.title}`}
+                  >
+                    <Sparkles size={11} />
+                  </button>
+                  <button
+                    onClick={() => void archiveConversation(conversation.id, !showArchived)}
+                    className="shrink-0 rounded p-0.5 text-[var(--muted)] opacity-0 transition hover:text-[var(--text)] focus:opacity-100 group-hover:opacity-100"
+                    aria-label={`Archive ${conversation.title}`}
+                  >
+                    <Clock size={11} />
+                  </button>
+                  <button
+                    onClick={() => void deleteConversation(conversation.id)}
+                    className="shrink-0 rounded p-0.5 text-[var(--muted)] opacity-0 transition hover:text-rose-600 focus:opacity-100 group-hover:opacity-100"
+                    aria-label={`Delete ${conversation.title}`}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {spaces.length > 0 && (
+          <div className="border-t border-[var(--border)] p-2">
+            <p className="px-2 pb-1 pt-1 text-caption font-bold uppercase tracking-widest text-[var(--muted)]">Spaces</p>
+            <div className="space-y-0.5">
+              {spaces.map((space) => (
+                <button
+                  key={space.id}
+                  onClick={() => router.push(`/chat?conversation=${space.id}`)}
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition hover:bg-[var(--hover)]"
+                  title="Open in team chat — @assistant to loop in your bot"
+                >
+                  <Users size={13} className="shrink-0 text-[var(--muted)]" />
+                  <span className="min-w-0 flex-1 truncate text-meta font-medium text-[var(--text)]">{space.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </aside>
+
+      {/* Centre — conversation */}
+      <section className="flex min-h-0 flex-col">
+        <header className="flex h-[52px] items-center justify-between border-b border-[var(--border)] px-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <BotOrb size={30} working={busy} halo={busy} />
+            <span className="min-w-0">
+              <b className="block truncate font-display text-[13px] font-extrabold tracking-tight text-[var(--text)]">
+                {activeAgent
+                  ? teammates.find((mate) => mate.slug === activeAgent)?.name ?? "Teammate"
+                  : conversationTitle}
+              </b>
+              <span className="block truncate text-caption text-[var(--muted)]">
+                {busy ? (
+                  <span className="cy-shimmer-text font-semibold">Working…</span>
+                ) : activeAgent ? (
+                  <>
+                    {teammates.find((mate) => mate.slug === activeAgent)?.role}
+                    {" · on the team"}
+                  </>
+                ) : (
+                  "Your assistant · remembers across chats · reads your CRM"
+                )}
+              </span>
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={conversationId}
+              onChange={(event) => selectConversation(event.target.value)}
+              className="mr-1 max-w-[150px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-caption font-medium text-[var(--muted)] outline-none md:hidden"
+              title="Switch chat"
+            >
+              {conversations.length === 0 ? (
+                <option value="">New chat</option>
+              ) : (
+                conversations.map((conversation) => (
+                  <option key={conversation.id} value={conversation.id}>{conversation.title}</option>
+                ))
+              )}
+            </select>
+            <button
+              onClick={() => void newChat()}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)] md:hidden"
+              title="New chat"
+              aria-label="New chat"
+            >
+              <Plus size={14} />
+            </button>
+            <button
+              onClick={() => setBrowserOpen((value) => !value)}
+              className={`flex h-7 w-7 items-center justify-center rounded-lg border transition ${
+                browserOpen
+                  ? "border-accent bg-accent text-white"
+                  : "border-[var(--border)] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--text)]"
+              }`}
+              title="Live browser"
+              aria-label="Live browser"
+            >
+              <Globe size={14} />
+            </button>
+            <button
+              onClick={() => {
+                void loadPages();
+                setPagesBrowserOpen(true);
+              }}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
+              title="Pages"
+              aria-label="Pages"
+            >
+              <FileText size={14} />
+            </button>
+            <button
+              onClick={() => setRoutinesOpen(true)}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
+              title="Routines"
+              aria-label="Routines"
+            >
+              <Clock size={14} />
+            </button>
+            <select
+              value={model}
+              onChange={(e) => void changeModel(e.target.value)}
+              className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-caption font-medium text-[var(--muted)] outline-none"
+              title="Model"
+            >
+              {models.map((entry) => (
+                <option key={entry.id} value={entry.id}>{entry.label}</option>
+              ))}
+            </select>
+            <span className="flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-caption font-semibold text-emerald-600 dark:text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> live
+            </span>
+          </div>
+        </header>
+
+        <div
+          ref={scrollRef}
+          onScroll={(event) => {
+            const el = event.currentTarget;
+            followingRef.current = atBottom(el);
+            setAtEnd(atBottom(el));
+          }}
+          onWheel={(event) => {
+            if (event.deltaY < 0) followingRef.current = false;
+          }}
+          onPointerDown={() => {
+            followingRef.current = false;
+          }}
+          className="soft-scrollbar relative flex-1 overflow-y-auto px-5 py-4"
+        >
+          {loading ? (
+            <div className="flex h-full items-center justify-center text-xs text-[var(--muted)]">Loading…</div>
+          ) : messages.length === 0 ? (
+            <div className="cy-rise mx-auto flex h-full w-full max-w-[560px] flex-col justify-center gap-4">
+              <div>
+                <BotOrb size={44} halo />
+                <h2 className="mt-3 font-display text-[24px] font-extrabold leading-tight tracking-tight text-[var(--text)]">
+                  {brief?.user?.name ? `Hello, ${brief.user.name}.` : "What are we working on?"}
+                </h2>
+                <p className="mt-1 text-meta leading-relaxed text-[var(--muted)]">
+                  {brief?.isEmpty
+                    ? "Nothing in the CRM yet. Tell me about the business and I'll remember it, or ask me to add your first lead."
+                    : `I can see your live CRM — ${brief?.assistant?.name ?? "your assistant"}, running on ${brief?.assistant?.model ?? "your model"}. Here is what stands out:`}
+                </p>
+              </div>
+
+              {brief && !brief.isEmpty && (
+                <div className="grid gap-2">
+                  <button
+                    onClick={() => setInput("Where does my pipeline stand, and which deals are stalling?")}
+                    className="group flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-left shadow-[var(--shadow-1)] transition hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[var(--shadow-2)]"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-caption font-bold uppercase tracking-wide text-[var(--muted)]">
+                        Pipeline
+                      </span>
+                      <span className="block truncate text-[13px] font-semibold text-[var(--text)]">
+                        {brief.pipeline.deals} open deal{brief.pipeline.deals === 1 ? "" : "s"}
+                        {brief.pipeline.value > 0 ? ` · ${shortMoney(brief.pipeline.value)}` : ""}
+                      </span>
+                    </span>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-caption font-bold ${
+                        brief.pipeline.stalled > 0
+                          ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                          : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                      }`}
+                    >
+                      {brief.pipeline.stalled > 0 ? `${brief.pipeline.stalled} stalled` : "all moving"}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setInput("What is overdue or due today, and what should I do first?")}
+                    className="group flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-left shadow-[var(--shadow-1)] transition hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[var(--shadow-2)]"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-caption font-bold uppercase tracking-wide text-[var(--muted)]">
+                        My work
+                      </span>
+                      <span className="block truncate text-[13px] font-semibold text-[var(--text)]">
+                        {brief.work.nextTask ?? "Nothing due today"}
+                      </span>
+                    </span>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-caption font-bold ${
+                        brief.work.overdue > 0
+                          ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
+                          : "bg-[var(--surface-2)] text-[var(--muted)]"
+                      }`}
+                    >
+                      {brief.work.overdue > 0
+                        ? `${brief.work.overdue} overdue`
+                        : `${brief.work.dueToday} due`}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setInput("Which leads have gone quiet, and what should I send them?")}
+                    className="group flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-left shadow-[var(--shadow-1)] transition hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[var(--shadow-2)]"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-caption font-bold uppercase tracking-wide text-[var(--muted)]">
+                        Leads
+                      </span>
+                      <span className="block truncate text-[13px] font-semibold text-[var(--text)]">
+                        {brief.leads.goingCold > 0
+                          ? `${brief.leads.goingCold} gone quiet for 2+ weeks`
+                          : "No leads need a nudge"}
+                      </span>
+                    </span>
+                    <CornerDownLeft size={12} className="shrink-0 text-[var(--muted)] opacity-0 transition group-hover:opacity-100" />
+                  </button>
+                </div>
+              )}
+
+              <div className="grid w-full gap-2 sm:grid-cols-2">
+                {SUGGESTIONS.map((suggestion) => (
+                  <button
+                    key={suggestion}
+                    onClick={() => setInput(suggestion)}
+                    className="group flex items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-left text-meta font-medium text-[var(--text-2)] shadow-[var(--shadow-1)] transition duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:text-accent hover:shadow-[var(--shadow-2)]"
+                  >
+                    <span className="min-w-0 truncate">{suggestion}</span>
+                    <CornerDownLeft size={12} className="shrink-0 opacity-0 transition group-hover:opacity-100" />
+                  </button>
+                ))}
+              </div>
+
+              {brief?.goals?.length ? (
+                <div className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2">
+                  <p className="flex items-center gap-1.5 text-caption font-bold uppercase tracking-wide text-accent">
+                    <Users size={10} /> Team working
+                  </p>
+                  <div className="mt-1 space-y-0.5">
+                    {brief.goals.map((goal) => (
+                      <button
+                        key={goal.id}
+                        onClick={() => router.push(`/ai/team?goal=${goal.id}`)}
+                        className="flex w-full items-center justify-between gap-2 text-left"
+                      >
+                        <span className="min-w-0 truncate text-meta font-medium text-[var(--text)]">{goal.title}</span>
+                        <span className="shrink-0 text-caption text-[var(--muted)]">
+                          {goal.status.toLowerCase()} · r{goal.round}/{goal.maxRounds}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {(brief?.pages?.length || brief?.routines?.length) && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-caption text-[var(--muted)]">
+                  {brief?.pages?.slice(0, 2).map((page) => (
+                    <button
+                      key={page.id}
+                      onClick={() => void showPage(page.id)}
+                      className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1 font-medium transition hover:border-accent/50 hover:text-accent"
+                    >
+                      <FileText size={10} /> {page.title}
+                    </button>
+                  ))}
+                  {brief?.routines?.length ? (
+                    <button
+                      onClick={() => setRoutinesOpen(true)}
+                      className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1 font-medium transition hover:border-accent/50 hover:text-accent"
+                    >
+                      <Clock size={10} /> {brief.routines.length} routine
+                      {brief.routines.length === 1 ? "" : "s"} scheduled
+                    </button>
+                  ) : null}
+                  <span className="opacity-70">⌘K to search · / for commands</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mx-auto max-w-3xl space-y-3">
+              {messages.map((message, index) => {
+                const day = dayLabel(message.createdAt);
+                const previousDay = index > 0 ? dayLabel(messages[index - 1].createdAt) : "";
+                return (
+                <div key={message.id}>
+                {day && day !== previousDay && (
+                  <div className="my-3 flex items-center gap-2" role="separator" aria-label={day}>
+                    <span className="h-px flex-1 bg-[var(--border)]" />
+                    <span className="rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-caption font-semibold uppercase tracking-wide text-[var(--faint)]">
+                      {day}
+                    </span>
+                    <span className="h-px flex-1 bg-[var(--border)]" />
+                  </div>
+                )}
+                <div className={`cy-rise flex gap-2.5 ${message.role === "user" ? "flex-row-reverse" : ""}`}>
+                  {message.role === "assistant" && <span className="mt-0.5"><BotOrb size={26} /></span>}
+                  <div className={`min-w-0 ${message.role === "user" ? "max-w-[78%] text-right" : "max-w-[86%] flex-1"}`}>
+                    <div
+                      className={
+                        message.role === "user"
+                          ? "cy-bubble-user inline-block whitespace-pre-wrap break-words rounded-2xl rounded-tr-md px-3.5 py-2 text-prose leading-[1.55]"
+                          : "break-words text-prose leading-[1.7] text-[var(--text)]"
+                      }
+                    >
+                      {message.role === "assistant" && !message.content && busy ? (
+                        <span role="status" aria-live="polite" className="flex items-center gap-1.5">
+                          <span className="cy-shimmer-text text-meta font-semibold">Thinking…</span>
+                        </span>
+                      ) : (
+                        toBlocks(message).map((block, index) => {
+                          if (block.kind === "text") {
+                            return <TextBlock key={index} block={block} assistant={message.role === "assistant"} />;
+                          }
+                          if (block.kind === "steps") return <StepBlock key={index} block={block} />;
+                          if (block.kind === "files") return <FileBlock key={index} block={block} />;
+                          return null;
+                        })
+                      )}
+                      {message.streaming && message.content && (
+                        <span className="cy-blink ml-0.5 inline-block h-3.5 w-[2px] rounded-full bg-accent align-middle" />
+                      )}
+                    </div>
+                    {message.attachments && (() => {
+                      try {
+                        const items = JSON.parse(message.attachments);
+                        if (!Array.isArray(items) || items.length === 0) return null;
+                        return (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {items.map((item: any) => (
+                              String(item.mimeType ?? "").startsWith("image/") ? (
+                                <a key={item.id} href={item.url} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-lg border border-[var(--border)]">
+                                  <img src={item.url} alt={item.name} className="h-16 w-16 object-cover" />
+                                </a>
+                              ) : (
+                                <a
+                                  key={item.id}
+                                  href={item.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-0.5 text-caption text-[var(--muted)] hover:text-accent"
+                                >
+                                  <Paperclip size={10} /> {item.name}
+                                </a>
+                              )
+                            ))}
+                          </div>
+                        );
+                      } catch {
+                        return null;
+                      }
+                    })()}
+                    {message.role === "assistant" && parseToolSteps(message.toolCalls).length > 0 && (
+                      <ToolActivity
+                        steps={parseToolSteps(message.toolCalls)}
+                        live={Boolean(message.streaming) && busy}
+                        durationMs={message.toolDurationMs}
+                      />
+                    )}
+                    {message.role === "assistant" && message.content && (
+                      <div className="mt-1 flex items-center gap-2">
+                        <button
+                          onClick={() => void copyMessage(message.id, message.content)}
+                          className="flex items-center gap-1 rounded-md px-1.5 py-0.5 text-caption text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
+                          title="Copy reply"
+                        >
+                          {copiedId === message.id ? <Check size={11} /> : <Copy size={11} />}
+                          {copiedId === message.id ? "Copied" : "Copy"}
+                        </button>
+                        {formatTime(message.createdAt) && (
+                          <span className="text-caption text-[var(--muted)]">{formatTime(message.createdAt)}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                </div>
+                );
+              })}
+              {pendingAction && (
+                <AskBlock
+                  block={{
+                    kind: "ask",
+                    id: pendingAction.id,
+                    summary: pendingAction.summary,
+                    toolName: pendingAction.toolName,
+                    answered: pendingAction.answered,
+                    canAlwaysAllow: pendingAction.canAlwaysAllow,
+                  }}
+                  onDecide={(approve, alwaysAllow) => void decide(approve, alwaysAllow)}
+                />
+              )}
+            </div>
+          )}
+        </div>
+
+
+
+        {!atEnd && messages.length > 0 && (
+          <button
+            onClick={() => {
+              followingRef.current = true;
+              scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+            }}
+            aria-hidden={atEnd}
+            tabIndex={atEnd ? -1 : 0}
+            className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-caption font-semibold text-[var(--text)] shadow-lg transition hover:border-accent"
+          >
+            Jump to latest
+          </button>
+        )}
+
+        {error && (
+          <div role="alert" className="border-t border-rose-500/20 bg-rose-500/10 px-4 py-2 text-meta text-rose-600 dark:text-rose-400">
+            {error}
+          </div>
+        )}
+
+        <div className="border-t border-[var(--border)] px-5 py-3">
+          {attachments.length > 0 && (
+            <div className="mx-auto mb-1.5 flex max-w-3xl flex-wrap gap-1.5">
+              {attachments.map((attachment) => (
+                <span key={attachment.id} className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-0.5 text-caption text-[var(--muted)]">
+                  <Paperclip size={10} /> {attachment.name}
+                  <button onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== attachment.id))} className="ml-1 hover:text-rose-500">
+                    <X size={10} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          {slashMatches.length > 0 && (
+            <div className="mx-auto mb-1.5 max-w-3xl overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-lg">
+              {slashMatches.map((entry) => (
+                <button
+                  key={entry.command}
+                  onClick={() => runSlash(entry.command)}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left transition hover:bg-[var(--hover)]"
+                >
+                  <span className="w-16 shrink-0 font-mono text-meta font-semibold text-accent">{entry.command}</span>
+                  <span className="text-meta text-[var(--muted)]">{entry.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div
+            onDragOver={(event) => {
+              if (event.dataTransfer.types.includes("Files")) {
+                event.preventDefault();
+                setDragging(true);
+              }
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragging(false);
+              void uploadFiles(event.dataTransfer.files);
+            }}
+            className={`cy-focus-ring mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border bg-[var(--surface)] p-1.5 shadow-[var(--shadow-1)] transition ${
+              dragging ? "border-accent ring-2 ring-inset ring-accent/40" : "border-[var(--border-strong)]"
+            }`}
+          >
+            <textarea
+              ref={textareaRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  // Never send while an IME is still composing (Hindi input).
+                  if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+                  // A slash command is a command, not a message.
+                  if (slashMatches.length > 0) {
+                    e.preventDefault();
+                    runSlash(slashMatches[0].command);
+                    return;
+                  }
+                  e.preventDefault();
+                  void send();
+                }
+                if (e.key === "Escape" && slashMatches.length) setInput("");
+              }}
+              onPaste={(event) => {
+                // Only intercept real files; text pastes stay native.
+                if (!event.clipboardData.files.length) return;
+                event.preventDefault();
+                void uploadFiles(event.clipboardData.files);
+              }}
+              placeholder={dragging ? "Drop to attach…" : `Message ${assistantName}…`}
+              rows={1}
+              maxLength={5000}
+              className="min-h-9 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-prose outline-none placeholder:text-[var(--muted)]"
+            />
+            <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => void uploadFiles(e.target.files)} accept=".txt,.csv,.md,.json,.pdf,.png,.jpg,.jpeg,.webp" />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              title="Attach a file"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)] disabled:opacity-40"
+            >
+              {uploading ? <RefreshCw size={15} className="animate-spin" /> : <Paperclip size={15} />}
+            </button>
+            <button
+              type="button"
+              onClick={toggleListening}
+              title={listening ? "Stop dictating" : "Dictate with your voice"}
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] transition ${
+                listening ? "bg-rose-500/10 text-rose-600 dark:text-rose-400" : "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--text)]"
+              }`}
+            >
+              {listening ? <MicOff size={15} /> : <Mic size={15} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSpeakReplies((current) => {
+                  const next = !current;
+                  speakRepliesRef.current = next;
+                  if (!next && typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
+                  return next;
+                });
+              }}
+              title={speakReplies ? "Stop speaking replies" : "Speak replies aloud"}
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] transition ${
+                speakReplies ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--text)]"
+              }`}
+            >
+              {speakReplies ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            </button>
+            {busy ? (
+              <button
+                onClick={() => abortRef.current?.abort()}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-600 transition hover:bg-rose-500/20 dark:text-rose-400"
+                aria-label="Stop generating"
+                title="Stop generating"
+              >
+                <Square size={13} />
+              </button>
+            ) : (
+              <button
+                onClick={() => void send()}
+                disabled={(!input.trim() && attachments.length === 0) || uploading}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-[var(--shadow-accent)] transition duration-200 hover:-translate-y-0.5 active:translate-y-0 disabled:translate-y-0 disabled:opacity-40 disabled:shadow-none"
+                style={{ background: "linear-gradient(135deg, var(--accent), var(--accent-2))" }}
+                aria-label="Send"
+              >
+                <CornerDownLeft size={15} />
+              </button>
+            )}
+          </div>
+          <p className="mx-auto mt-1.5 max-w-3xl px-1 text-caption text-[var(--muted)]">
+            Enter to send · Shift + Enter for a new line · / for commands · ⌘K to search · drop or paste a file to attach
+          </p>
+        </div>
+      </section>
+
+      {/* Right rail — transparency */}
+      <aside className="hidden min-h-0 flex-col overflow-y-auto border-l border-[var(--border)] p-4 xl:flex">
+        <p className="mb-2 flex items-center gap-1.5 text-caption font-bold uppercase tracking-widest text-[var(--muted)]">
+          <Sparkles size={12} /> What it remembers
+        </p>
+        {memories.length === 0 ? (
+          <p className="text-meta leading-relaxed text-[var(--muted)]">
+            Nothing yet. Tell it about yourself and it will remember — you can delete anything here.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {memories.map((memory) => (
+              <div key={memory.id} className="group flex items-start justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2">
+                <p className="text-meta leading-relaxed text-[var(--text)]">{memory.content}</p>
+                <button
+                  onClick={() => void forget(memory.id)}
+                  className="mt-0.5 shrink-0 text-[var(--muted)] opacity-0 transition group-hover:opacity-100 hover:text-rose-500"
+                  title="Forget this"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p className="mb-2 mt-6 flex items-center gap-1.5 text-caption font-bold uppercase tracking-widest text-[var(--muted)]">
+          <Wrench size={12} /> What it can see
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {TOOL_LABELS.map((tool) => (
+            <span key={tool.id} className="rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-0.5 text-caption text-[var(--muted)]">
+              {tool.label}
+            </span>
+          ))}
+        </div>
+        <p className="mb-2 mt-6 flex items-center gap-1.5 text-caption font-bold uppercase tracking-widest text-[var(--muted)]">
+          <Check size={12} /> Approvals
+        </p>
+        <div className="space-y-1">
+          {([
+            ["ASK", "Ask me", "Every change waits for you"],
+            ["AUTO", "Auto", "Reads run free; writes still ask"],
+            ["NEVER", "Never ask", "Runs changes unattended (untrusted content still blocks)"],
+          ] as const).map(([mode, label, hint]) => (
+            <button
+              key={mode}
+              onClick={() => void saveApprovalMode(mode)}
+              aria-pressed={approvalMode === mode}
+              className={`block w-full rounded-lg border px-2 py-1.5 text-left transition ${
+                approvalMode === mode
+                  ? "border-accent bg-accent/10"
+                  : "border-[var(--border)] hover:bg-[var(--hover)]"
+              }`}
+            >
+              <span className="block text-meta font-semibold text-[var(--text)]">{label}</span>
+              <span className="block text-caption leading-tight text-[var(--muted)]">{hint}</span>
+            </button>
+          ))}
+        </div>
+        {approvalRules.length > 0 && (
+          <>
+            <p className="mb-1.5 mt-3 text-caption font-semibold text-[var(--muted)]">Always allowed</p>
+            <div className="space-y-1">
+              {approvalRules.map((rule) => (
+                <div key={rule.toolName} className="flex items-center gap-1.5 rounded-md border border-[var(--border)] px-2 py-1">
+                  <span className="min-w-0 flex-1 truncate text-caption text-[var(--text)]">{rule.toolName}</span>
+                  <button
+                    onClick={() => void removeRule(rule.toolName)}
+                    className="shrink-0 rounded p-0.5 text-[var(--muted)] transition hover:text-rose-600"
+                    aria-label={`Stop always allowing ${rule.toolName}`}
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        <p className="mt-3 text-caption leading-relaxed text-[var(--muted)]">
+          Reads run instantly. Writes ask first, and a run that read untrusted content always asks.
+        </p>
+      </aside>
+
+      <RoutinesModal open={routinesOpen} onClose={() => setRoutinesOpen(false)} />
+
+      {openPage && (
+        <PagesPanel
+          key={openPage.id}
+          page={openPage}
+          onClose={() => setOpenPage(null)}
+          onShared={(id, isPublic) => {
+            setOpenPage((current) => (current && current.id === id ? { ...current, isPublic } : current));
+            setPages((list) => list.map((entry) => (entry.id === id ? { ...entry, isPublic } : entry)));
+          }}
+        />
+      )}
+
+      {browserOpen && !openPage && <BrowserPanel onClose={() => setBrowserOpen(false)} />}
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        conversations={conversations.map((conversation) => ({ id: conversation.id, title: conversation.title }))}
+        pages={pages.map((page) => ({ id: page.id, title: page.title }))}
+        actions={[
+          { id: "new", label: "New chat", hint: "start fresh", run: () => void newChat() },
+          { id: "pages", label: "Open pages", run: () => { void loadPages(); setPagesBrowserOpen(true); } },
+          { id: "browser", label: "Open live browser", run: () => setBrowserOpen(true) },
+          { id: "routines", label: "Open routines", run: () => setRoutinesOpen(true) },
+        ]}
+        onOpenConversation={(id) => void selectConversation(id)}
+        onOpenPage={(id) => void showPage(id)}
+      />
+
+      {pagesBrowserOpen && (
+        <PagesBrowser
+          pages={pages}
+          onOpen={(id) => void showPage(id)}
+          onClose={() => setPagesBrowserOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
