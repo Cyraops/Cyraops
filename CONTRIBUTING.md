@@ -90,6 +90,53 @@ git diff --cached --name-only | grep -E '(\.env|\.key|\.pem)$' && echo "STOP: se
 If a secret is committed: **rotate it first**, then rewrite history. Deleting it in a later
 commit leaves it in the log forever.
 
+
+## Hooks (installed per clone)
+
+This repository ships its own git hooks. They are not optional decoration — they are the
+guardrail for the two mistakes that are expensive to undo.
+
+```bash
+./scripts/install-git-hooks.sh     # once per clone
+```
+
+| Hook | What it blocks | Why |
+|---|---|---|
+| `pre-commit` | `.env`, `*.key`, `*.pem`, `config/*.yaml`, provider tokens (`github_pat_`, `ghp_`, `sk-`, `AKIA`), private keys, connection strings with an inline password, any file over 2 MB | A credential in one commit is in history forever, and rotating it is the only real fix |
+| `pre-push` | A failed `npm run typecheck`, when pushing to `dev`, `release` or `production` | Broken code must not reach a long-lived branch |
+
+Both are bypassable with `--no-verify`. That is deliberate: a hook that cannot be bypassed
+in an emergency gets disabled permanently, and then protects nothing.
+
+## The loop, in one screen
+
+```bash
+# 1. start from dev
+git switch dev && git pull --ff-only
+git switch -c feature/short-name
+
+# 2. work, then prove it
+npm run typecheck && npm run test:unit && npm run test:jobs
+cd site-3d && node audit.mjs && cd ..     # only if the marketing site changed
+
+# 3. land on dev
+git switch dev && git merge --no-ff feature/short-name && git push
+
+# 4. promote a verified candidate
+git switch release && git merge --ff-only dev && git push
+
+# 5. ship it
+git switch production && git merge --ff-only release && git push
+git tag -a v$(date +%Y.%m.%d) -m "Production release: <one line>" && git push origin --tags
+```
+
+Deploying after step 5: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+## Branch protection on the remote
+
+`release` and `production` reject force-pushes and deletion, so history on those branches
+cannot be rewritten by accident. `dev` is left open — it is where work happens.
+
 ## Review checklist
 
 - [ ] Typecheck, unit tests and job suites pass
