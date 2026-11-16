@@ -1194,18 +1194,8 @@ export function BotWorkspace() {
             >
               <Plus size={14} />
             </button>
-            <button
-              onClick={() => setBrowserOpen((value) => !value)}
-              className={`flex h-7 w-7 items-center justify-center rounded-lg border transition ${
-                browserOpen
-                  ? "border-accent bg-accent text-white"
-                  : "border-[var(--border)] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--text)]"
-              }`}
-              title="Live browser"
-              aria-label="Live browser"
-            >
-              <Globe size={14} />
-            </button>
+            {/* The live browser toggles from the rail now, so the header does not
+                need a second door to it. */}
             <button
               onClick={() => {
                 void loadPages();
