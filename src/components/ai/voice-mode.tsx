@@ -413,9 +413,16 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
           onTap={onPlanetTap}
           className="pointer-events-auto h-40 w-40 drop-shadow-[0_18px_40px_rgba(30,30,80,0.22)]"
         />
-        <p className="rounded-full bg-[var(--surface)]/85 px-2 py-0.5 text-caption font-semibold text-[var(--muted)] backdrop-blur-sm">
-          {label}
-        </p>
+        {phase === "idle" && (
+          <p className="rounded-full bg-[var(--surface)]/85 px-2 py-0.5 text-caption font-semibold text-[var(--muted)] backdrop-blur-sm">
+            {label}
+          </p>
+        )}
+        {/* While it is running, the planet's own motion shows the state; the words
+            stay for anyone using a screen reader. */}
+        <span className="sr-only" role="status" aria-live="polite">
+          {phase === "idle" ? "" : label}
+        </span>
       </div>
 
       {/* The conversation, readable and scrollable. */}
