@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
+  Filter,
   Check,
   ChevronRight,
   CircleDot,
@@ -104,7 +105,18 @@ export function TicketDesk() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"open" | "all" | "closed">("open");
+  /**
+   * Filters are kept as one object so "Clear" is a single reset and the count of
+   * active filters is derivable, rather than six booleans to keep in sync.
+   */
+  const [filters, setFilters] = useState<{
+    status: "open" | "all" | "closed" | string;
+    priority: string;
+    source: string;
+    type: string;
+    group: string;
+    assignee: string;
+  }>({ status: "open", priority: "", source: "", type: "", group: "", assignee: "" });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tab, setTab] = useState<"details" | "activity" | "resolution">("details");
   const [comments, setComments] = useState<Comment[]>([]);
@@ -147,17 +159,31 @@ export function TicketDesk() {
       .catch(() => setComments([]));
   }, [selected?.id, selected?.resolution]);
 
+  /** Groups that actually exist in the queue, so the filter never offers a dead option. */
+  const groups = useMemo(
+    () => [...new Set(tickets.map((t) => t.groupName).filter(Boolean) as string[])].sort(),
+    [tickets]
+  );
+  const activeFilters = Object.entries(filters).filter(([key, value]) => value !== "" && !(key === "status" && value === "open")).length;
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return tickets.filter((t) => {
-      if (statusFilter === "open" && t.status === "DONE") return false;
-      if (statusFilter === "closed" && t.status !== "DONE") return false;
+      if (filters.status === "open" && t.status === "DONE") return false;
+      if (filters.status === "closed" && t.status !== "DONE") return false;
+      if (!["open", "all", "closed", ""].includes(filters.status) && t.status !== filters.status) return false;
+      if (filters.priority && t.priority !== filters.priority) return false;
+      if (filters.source && (t.source ?? "") !== filters.source) return false;
+      if (filters.type && (t.type ?? "") !== filters.type) return false;
+      if (filters.group && (t.groupName ?? "") !== filters.group) return false;
+      if (filters.assignee === "unassigned" && (t.assignees ?? []).some((a) => a.kind === "user")) return false;
+      if (filters.assignee && filters.assignee !== "unassigned" && !(t.assignees ?? []).some((a) => a.kind === "user" && a.id === filters.assignee)) return false;
       if (!needle) return true;
       return [t.title, t.requesterName, t.requesterEmail, ticketRef(t.number), t.groupName, t.category]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(needle));
     });
-  }, [tickets, statusFilter, query]);
+  }, [tickets, filters, query]);
 
   const patch = async (id: string, body: Record<string, unknown>, field: string) => {
     setSaving(field);
@@ -483,10 +509,10 @@ export function TicketDesk() {
                 {(["open", "all", "closed"] as const).map((value) => (
                   <button
                     key={value}
-                    onClick={() => setStatusFilter(value)}
-                    aria-pressed={statusFilter === value}
+                    onClick={() => setFilters((f) => ({ ...f, status: value }))}
+                    aria-pressed={filters.status === value}
                     className={`h-8 rounded-md px-2.5 text-caption font-semibold capitalize transition ${
-                      statusFilter === value ? "bg-accent/10 text-accent" : "text-[var(--muted)] hover:bg-[var(--hover)]"
+                      filters.status === value ? "bg-accent/10 text-accent" : "text-[var(--muted)] hover:bg-[var(--hover)]"
                     }`}
                   >
                     {value}
@@ -495,6 +521,56 @@ export function TicketDesk() {
               </div>
             </div>
           </header>
+
+          {/* Filters: every property a ticket carries, because "which tickets" is
+              almost never just "open or closed". */}
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
+            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
+              <Filter size={12} /> Filters
+            </span>
+            {([
+              ["status", "Status", ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"].map((v) => [v, STATUS_LABEL[v] ?? v])],
+              ["priority", "Priority", PRIORITIES.map((v) => [v, humanise(v)])],
+              ["source", "Source", SOURCES.map((v) => [v, humanise(v)])],
+              ["type", "Type", TYPES.map((v) => [v, humanise(v)])],
+              ["group", "Group", groups.map((v) => [v, v])],
+              [
+                "assignee",
+                "Agent",
+                [["unassigned", "Unassigned"], ...team.map((m) => [m.id, m.name] as [string, string])],
+              ],
+            ] as Array<[keyof typeof filters, string, Array<[string, string]>]>).map(([key, label, options]) => (
+              <select
+                key={key}
+                aria-label={`Filter by ${label}`}
+                value={filters[key] === "open" || filters[key] === "all" || filters[key] === "closed" ? "" : filters[key]}
+                onChange={(event) => setFilters((f) => ({ ...f, [key]: event.target.value }))}
+                className={`h-8 rounded-lg border px-2 text-caption outline-none transition focus:border-accent ${
+                  filters[key] && !["open", "all", "closed"].includes(filters[key])
+                    ? "border-accent/40 bg-accent/5 font-semibold text-accent"
+                    : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)]"
+                }`}
+              >
+                <option value="">All {label.toLowerCase()}</option>
+                {options.length === 0 && <option value="" disabled>No {label.toLowerCase()} values yet</option>}
+                {options.map(([value, text]) => (
+                  <option key={value} value={value}>{text}</option>
+                ))}
+              </select>
+            ))}
+            {activeFilters > 0 && (
+              <button
+                onClick={() => setFilters({ status: "open", priority: "", source: "", type: "", group: "", assignee: "" })}
+                className="flex h-8 items-center gap-1 rounded-lg px-2 text-caption font-semibold text-accent hover:bg-accent/5"
+              >
+                <X size={11} /> Clear {activeFilters}
+              </button>
+            )}
+            <span className="ml-auto text-caption text-[var(--muted)]">
+              {visible.length} of {tickets.length} shown
+            </span>
+          </div>
+
 
           {approvals > 0 && (
             <div className="flex items-center gap-2 rounded-xl border border-amber-300/60 bg-amber-50/60 px-3 py-2 text-meta dark:border-amber-900/40 dark:bg-amber-950/20">
