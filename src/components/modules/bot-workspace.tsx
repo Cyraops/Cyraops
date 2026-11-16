@@ -589,6 +589,27 @@ export function BotWorkspace() {
     []
   );
 
+  /**
+   * The bot page owns the viewport: its columns scroll, the document does not.
+   * Locking the document here means no child can ever drag the page with it,
+   * whatever the layout does later.
+   */
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const previousHtml = html.style.overflow;
+    const previousBody = body.style.overflow;
+    const previousOverscroll = body.style.overscrollBehavior;
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+    return () => {
+      html.style.overflow = previousHtml;
+      body.style.overflow = previousBody;
+      body.style.overscrollBehavior = previousOverscroll;
+    };
+  }, []);
+
   useEffect(() => {
     void (async () => {
       await loadConversations();
