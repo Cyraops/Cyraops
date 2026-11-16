@@ -56,7 +56,7 @@ const statuses = ["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"];
 const tabs = [
   { id: "overview", label: "Overview", icon: FolderKanban },
   { id: "milestones", label: "Milestones", icon: Layers },
-  { id: "tasks", label: "Tasks", icon: CheckCircle2 },
+  { id: "tasks", label: "Tickets", icon: CheckCircle2 },
   { id: "billing", label: "Client Invoices", icon: Wallet },
   { id: "files", label: "Files", icon: FileText },
   { id: "discussion", label: "Discussion", icon: MessageCircle },
@@ -450,14 +450,14 @@ export function ProjectsModule() {
           <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="font-display font-bold">All project tasks</h2>
+                <h2 className="font-display font-bold">Project tickets</h2>
                 <p className="mt-1 text-xs text-[var(--muted)]">
-                  Track technical deliverables and tasks for this project.
+                  Every task here is a ticket — triage the status and owner without leaving the project.
                 </p>
               </div>
               <Button onClick={() => setTaskOpen(true)}>
                 <Plus size={14} />
-                Add task
+                New ticket
               </Button>
             </div>
             <TaskRows
@@ -1284,53 +1284,129 @@ function TaskRows({
     }
     onChange();
   };
+  const [savingRow, setSavingRow] = useState<string>("");
+
+  /** Inline triage from the project tab: same desk endpoint, same rules. */
+  const patch = async (task: any, body: Record<string, unknown>) => {
+    setSavingRow(task.id);
+    try {
+      const response = await fetch(`/api/tickets/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error ?? "Could not save");
+      onChange();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not save", "error");
+    } finally {
+      setSavingRow("");
+    }
+  };
+
+  const statusLabel: Record<string, string> = {
+    BACKLOG: "Backlog",
+    TODO: "New",
+    IN_PROGRESS: "In progress",
+    IN_REVIEW: "In review",
+    DONE: "Closed",
+  };
+  const priorityDot: Record<string, string> = {
+    LOW: "bg-emerald-500",
+    MEDIUM: "bg-sky-500",
+    HIGH: "bg-amber-500",
+    URGENT: "bg-rose-500",
+  };
+
   return (
     <>
       {tasks.length ? (
-    <div className="divide-y divide-[var(--border)]">
-      {tasks.map((task: any) => (
-        <div key={task.id} className="flex items-center gap-3 py-3">
-          <button
-            title="Advance task status"
-            onClick={() => void update(task)}
-            className={`flex h-5 w-5 items-center justify-center rounded-full border ${
-              task.status === "DONE"
-                ? "border-emerald-500 bg-emerald-500 text-white"
-                : "border-[var(--border)] hover:border-accent"
-            }`}
+        <div className="overflow-hidden rounded-xl border border-[var(--border)]">
+          <div
+            className="border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]"
+            style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 130px 100px 150px 110px", gap: 12, alignItems: "center" }}
           >
-            {task.status === "DONE" && <Check size={12} />}
-          </button>
-          <span className="min-w-0 flex-1">
-            <span
-              className={`block truncate text-xs font-semibold ${
-                task.status === "DONE" ? "text-[var(--muted)] line-through" : ""
-              }`}
-            >
-              {task.title}
-            </span>
-            {task.kind && <TaskKindBadge kind={task.kind} />}
-            <span className="mt-1 block text-[10px] text-[var(--muted)]">
-              <button
-                type="button"
-                onClick={() => setEditing(task)}
-                className="underline decoration-dotted underline-offset-2 hover:text-accent"
-                title="Change who owns this task"
-              >
-                {ownerLabel(task)}
-              </button>{" "}
-              · {task.status.replaceAll("_", " ")}
-            </span>
-          </span>
-          <span className="text-[10px] text-[var(--muted)]">
-            {task.dueDate ? formatDate(task.dueDate) : ""}
-          </span>
+            <span>Subject</span>
+            <span>Status</span>
+            <span>Priority</span>
+            <span>Assignee</span>
+            <span>Created</span>
+          </div>
+          <div>
+            {tasks.map((task: any) => {
+              const owners = (task.assignees ?? []).filter((a: any) => a.kind === "user");
+              return (
+                <div
+                  key={task.id}
+                  className="border-b border-[var(--border)] px-3 py-2.5 last:border-0"
+                  style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 130px 100px 150px 110px", gap: 12, alignItems: "center" }}
+                >
+                  <span className="min-w-0">
+                    <span className={`block truncate text-meta font-semibold ${task.status === "DONE" ? "text-[var(--muted)] line-through" : ""}`}>
+                      {task.title}
+                    </span>
+                    <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--muted)]">
+                      {typeof task.number === "number" && <span className="font-mono">#SR-{task.number}</span>}
+                      {task.type && <span>· {String(task.type).replaceAll("_", " ").toLowerCase()}</span>}
+                      {task.kind && <TaskKindBadge kind={task.kind} className="!mt-0" />}
+                    </span>
+                  </span>
+
+                  <span>
+                    <select
+                      value={task.status}
+                      disabled={savingRow === task.id}
+                      onChange={(event) => void patch(task, { status: event.target.value })}
+                      aria-label={`Status for ${task.title}`}
+                      className="h-7 w-full cursor-pointer rounded-md border border-transparent bg-transparent px-1 text-caption outline-none transition hover:border-[var(--border)] hover:bg-[var(--surface-2)] focus:border-accent"
+                    >
+                      {cycle.map((status) => (
+                        <option key={status} value={status}>{statusLabel[status] ?? status}</option>
+                      ))}
+                    </select>
+                  </span>
+
+                  <span className="flex items-center gap-1.5 text-caption capitalize text-[var(--muted)]">
+                    <span className={`h-2 w-2 rounded-sm ${priorityDot[task.priority] ?? "bg-emerald-500"}`} />
+                    {String(task.priority ?? "").toLowerCase()}
+                  </span>
+
+                  <span className="flex items-center gap-1">
+                    <select
+                      value={owners[0]?.id ?? ""}
+                      disabled={savingRow === task.id}
+                      onChange={(event) => void patch(task, { assigneeIds: event.target.value ? [event.target.value] : [] })}
+                      aria-label={`Assignee for ${task.title}`}
+                      className="h-7 min-w-0 flex-1 cursor-pointer rounded-md border border-transparent bg-transparent px-1 text-caption outline-none transition hover:border-[var(--border)] hover:bg-[var(--surface-2)] focus:border-accent"
+                    >
+                      <option value="">Unassigned</option>
+                      {members.map((m: any) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(task)}
+                      title="Add an AI teammate or several owners"
+                      aria-label={`Change owners of ${task.title}`}
+                      className="flex h-7 w-6 shrink-0 items-center justify-center rounded-md text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
+                    >
+                      <Users size={12} />
+                    </button>
+                  </span>
+
+                  <span className="flex items-center gap-1 text-[10px] text-[var(--muted)]">
+                    <Clock3 size={9} /> {formatDate(task.createdAt)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      ))}
-    </div>
       ) : (
-        <div className="py-8 text-center text-xs text-[var(--muted)]">
-          No tasks yet. Add the first task to define the next step.
+        <div className="rounded-xl border border-dashed border-[var(--border)] py-10 text-center text-xs text-[var(--muted)]">
+          No tickets in this project yet. Add the first one, or create it from the Tickets desk.
         </div>
       )}
 
