@@ -1218,7 +1218,7 @@ export function BotWorkspace() {
       </aside>
 
       {/* Centre — conversation */}
-      <section className="flex min-h-0 flex-col">
+      <section className="flex min-h-0 flex-col overflow-hidden">
         {voiceOpen ? (
           <VoiceMode
             assistantId={assistantId || undefined}

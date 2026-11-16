@@ -400,7 +400,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
             : "Tap the planet to talk";
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* The planet: still the target you tap to start, smaller now that the
           conversation has to fit under it. */}
       <div className="flex shrink-0 flex-col items-center gap-1 pb-1 pt-1">
