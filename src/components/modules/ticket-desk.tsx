@@ -463,7 +463,7 @@ export function TicketDesk() {
           </form>
 
           <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-            <div className="grid grid-cols-[1fr_140px_110px_90px_1fr] gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
+            <div className="ticket-grid-head border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
               <span>Subject</span>
               <span>Contact</span>
               <span>Status</span>
@@ -485,7 +485,7 @@ export function TicketDesk() {
                     <button
                       key={t.id}
                       onClick={() => { setSelectedId(t.id); setTab("details"); }}
-                      className="grid w-full grid-cols-[1fr_140px_110px_90px_1fr] gap-3 border-b border-[var(--border)] px-3 py-2.5 text-left transition hover:bg-[var(--hover)]"
+                      className="ticket-grid w-full border-b border-[var(--border)] px-3 py-2.5 text-left transition hover:bg-[var(--hover)]"
                     >
                       <span className="min-w-0">
                         <span className={`block truncate text-meta font-semibold ${t.status === "DONE" ? "text-[var(--muted)]" : ""}`}>{t.title}</span>

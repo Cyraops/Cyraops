@@ -202,3 +202,33 @@ button { cursor: pointer; }
   border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--accent-ring);
 }
+
+/* Ticket queue columns. A real class rather than Tailwind's arbitrary
+   grid-template syntax: the JIT scanner missed the arbitrary variant once and
+   the queue collapsed into stacked blocks. */
+.ticket-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 110px 90px minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: center;
+}
+.ticket-grid-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 110px 90px minmax(0, 1fr);
+  gap: 0.75rem;
+}
+@media (max-width: 900px) {
+  /* On a phone the useful pair is what it is and whether it is open. */
+  .ticket-grid,
+  .ticket-grid-head {
+    grid-template-columns: minmax(0, 1fr) 96px;
+  }
+  .ticket-grid > :nth-child(2),
+  .ticket-grid > :nth-child(4),
+  .ticket-grid > :nth-child(5),
+  .ticket-grid-head > :nth-child(2),
+  .ticket-grid-head > :nth-child(4),
+  .ticket-grid-head > :nth-child(5) {
+    display: none;
+  }
+}
