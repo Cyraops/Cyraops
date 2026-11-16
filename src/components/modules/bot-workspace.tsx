@@ -258,6 +258,7 @@ export function BotWorkspace() {
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [botModal, setBotModal] = useState<{ mode: "create" | "edit"; agent?: any; template?: string } | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [teammates, setTeammates] = useState<
     Array<{
       id?: string;
@@ -1755,10 +1756,21 @@ export function BotWorkspace() {
             </span>
           ))}
         </div>
-        <p className="mb-2 mt-6 flex items-center gap-1.5 text-caption font-bold uppercase tracking-widest text-[var(--muted)]">
-          <Check size={12} /> Approvals
-        </p>
-        <div className="space-y-1">
+        <button
+          onClick={() => setApprovalsOpen((open) => !open)}
+          aria-expanded={approvalsOpen}
+          aria-controls="approval-modes"
+          className="mb-2 mt-6 flex w-full items-center gap-1.5 text-left text-caption font-bold uppercase tracking-widest text-[var(--muted)] transition hover:text-[var(--text)]"
+        >
+          <ChevronDown size={11} className={`transition-transform ${approvalsOpen ? "" : "-rotate-90"}`} />
+          <Check size={12} />
+          <span className="flex-1">Approvals</span>
+          {/* The current mode stays readable while the section is folded. */}
+          <span className="rounded-full bg-[var(--surface-2)] px-1.5 text-[10px] font-semibold normal-case tracking-normal">
+            {approvalMode === "ASK" ? "Ask me" : approvalMode === "AUTO" ? "Auto" : "Never ask"}
+          </span>
+        </button>
+        <div id="approval-modes" className={`space-y-1 ${approvalsOpen ? "" : "hidden"}`}>
           {([
             ["ASK", "Ask me", "Every change waits for you"],
             ["AUTO", "Auto", "Reads run free; writes still ask"],
@@ -1779,7 +1791,7 @@ export function BotWorkspace() {
             </button>
           ))}
         </div>
-        {approvalRules.length > 0 && (
+        {approvalsOpen && approvalRules.length > 0 && (
           <>
             <p className="mb-1.5 mt-3 text-caption font-semibold text-[var(--muted)]">Always allowed</p>
             <div className="space-y-1">
@@ -1798,9 +1810,11 @@ export function BotWorkspace() {
             </div>
           </>
         )}
-        <p className="mt-3 text-caption leading-relaxed text-[var(--muted)]">
-          Reads run instantly. Writes ask first, and a run that read untrusted content always asks.
-        </p>
+        {approvalsOpen && (
+          <p className="mt-3 text-caption leading-relaxed text-[var(--muted)]">
+            Reads run instantly. Writes ask first, and a run that read untrusted content always asks.
+          </p>
+        )}
       </aside>
 
       <RoutinesModal open={routinesOpen} onClose={() => setRoutinesOpen(false)} />
