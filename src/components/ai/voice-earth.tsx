@@ -7,6 +7,8 @@ export type EarthPhase = "idle" | "listening" | "thinking" | "speaking" | "error
 
 interface VoiceEarthProps {
   phase: EarthPhase;
+  /** Optional size override for the container. */
+  className?: string;
   /** Timestamp of the last words the person said (drives a spin-up). */
   personPulseAt: number;
   /** Timestamp of the last word spoken aloud (drives the same spin-up). */
@@ -28,7 +30,7 @@ const MOON_RADIUS = 0.27; // real ratio: 0.2725 of Earth
  * rises — and each word spoken, by the person or the assistant, adds a burst of
  * speed. It is decoration with real mechanics, all in one WebGL scene.
  */
-export function VoiceEarth({ phase, personPulseAt, speakPulseAt, onTap }: VoiceEarthProps) {
+export function VoiceEarth({ phase, personPulseAt, speakPulseAt, onTap, className }: VoiceEarthProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const phaseRef = useRef(phase);
@@ -213,7 +215,7 @@ export function VoiceEarth({ phase, personPulseAt, speakPulseAt, onTap }: VoiceE
   }, []);
 
   return (
-    <div className="relative h-56 w-56 cursor-pointer select-none" role="button" aria-label="Voice orb" tabIndex={0}
+    <div className={`relative cursor-pointer select-none ${className ?? "h-56 w-56"}`} role="button" aria-label="Voice orb" tabIndex={0}
       onClick={onTap} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onTap(); }}>
       <canvas ref={canvasRef} className="h-full w-full" aria-hidden />
     </div>
