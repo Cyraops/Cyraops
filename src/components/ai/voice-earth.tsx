@@ -47,6 +47,8 @@ export function VoiceEarth({ phase, personPulseAt, speakPulseAt, onTap }: VoiceE
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
 
     const scene = new THREE.Scene();
 
@@ -70,21 +72,21 @@ export function VoiceEarth({ phase, personPulseAt, speakPulseAt, onTap }: VoiceE
 
     const earth = new THREE.Mesh(
       new THREE.SphereGeometry(1, 64, 64),
-      new THREE.MeshPhongMaterial({ map: earthMap, specular: 0x1a1a2e, shininess: 14 })
+      new THREE.MeshPhongMaterial({ map: earthMap, specular: 0x2f4c7d, shininess: 18 })
     );
     earthGroup.add(earth);
 
     // Clouds: a shell that drifts a little faster than the surface.
     const clouds = new THREE.Mesh(
       new THREE.SphereGeometry(1.012, 64, 64),
-      new THREE.MeshPhongMaterial({ map: cloudMap, transparent: true, opacity: 0.5, depthWrite: false })
+      new THREE.MeshPhongMaterial({ map: cloudMap, transparent: true, opacity: 0.6, depthWrite: false })
     );
     earthGroup.add(clouds);
 
     // A faint atmospheric rim.
     const atmosphere = new THREE.Mesh(
       new THREE.SphereGeometry(1.07, 48, 48),
-      new THREE.MeshBasicMaterial({ color: 0x5a8cff, transparent: true, opacity: 0.12, side: THREE.BackSide })
+      new THREE.MeshBasicMaterial({ color: 0x6f9dff, transparent: true, opacity: 0.17, side: THREE.BackSide })
     );
     earthGroup.add(atmosphere);
 
@@ -95,16 +97,16 @@ export function VoiceEarth({ phase, personPulseAt, speakPulseAt, onTap }: VoiceE
 
     const moon = new THREE.Mesh(
       new THREE.SphereGeometry(MOON_RADIUS, 48, 48),
-      new THREE.MeshPhongMaterial({ map: moonMap, specular: 0x111111, shininess: 6 })
+      new THREE.MeshPhongMaterial({ map: moonMap, specular: 0x262626, shininess: 8 })
     );
     moon.position.set(MOON_DISTANCE, 0, 0);
     moonOrbit.add(moon);
 
     // Sunlight from one direction: half the Earth is day, half is night.
-    const sun = new THREE.DirectionalLight(0xffffff, 2.6);
-    sun.position.set(-5, 2, 3.5);
+    const sun = new THREE.DirectionalLight(0xfff8ef, 3.0);
+    sun.position.set(-4.4, 1.7, 4.6);
     scene.add(sun);
-    scene.add(new THREE.AmbientLight(0x334466, 0.85));
+    scene.add(new THREE.AmbientLight(0x3d4f7d, 1.05));
 
     // A quiet starfield behind the pair.
     const starGeometry = new THREE.BufferGeometry();
