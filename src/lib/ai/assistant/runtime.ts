@@ -41,9 +41,23 @@ const ASSISTANT_TOOL_IDS = [
  * removed tool can never leave a dangling id here (the literal list had a
  * duplicate and advertised tools that did not exist).
  */
-export const ASSISTANT_TOOLS = JSON.stringify(
-  [...new Set(ASSISTANT_TOOL_IDS)].filter((id) => Boolean(toolRegistry.getTool(id)))
-);
+/**
+ * Built on demand, not at import time.
+ *
+ * The eager version depended on every tool module having already run its
+ * registration by the time this file was evaluated. With circular imports that
+ * is not guaranteed: a tool registered later (send_email was one) silently
+ * disappeared from the list, so the model could not call it and improvised
+ * instead. Reading the registry at call time removes the ordering hazard.
+ */
+export function assistantToolsJson(): string {
+  return JSON.stringify(
+    [...new Set(ASSISTANT_TOOL_IDS)].filter((id) => Boolean(toolRegistry.getTool(id)))
+  );
+}
+
+/** Kept for callers that only need the ids, e.g. tests. */
+export const ASSISTANT_TOOL_IDS_LIST = [...new Set(ASSISTANT_TOOL_IDS)];
 
 const BASE_SYSTEM_PROMPT = `You are the user's personal Cyraops Assistant inside the Cyraops CRM.
 - You work for one specific person and remember their context across conversations.
@@ -361,7 +375,7 @@ export async function runAssistantInThread(params: {
       modelProfile: "general",
       temperature: assistant.temperature,
       maxTokens: 1600,
-      tools: ASSISTANT_TOOLS,
+      tools: assistantToolsJson(),
       model: assistant.model || ASSISTANT_DEFAULT_MODEL,
     },
     history: params.history,
@@ -564,7 +578,7 @@ export async function sendAssistantMessage(params: {
       modelProfile: "general",
       temperature: agent?.temperature ?? assistant.temperature,
       maxTokens: agent?.maxTokens ?? 1600,
-      tools: agent?.tools ?? ASSISTANT_TOOLS,
+      tools: agent?.tools ?? assistantToolsJson(),
       model: assistant.model || ASSISTANT_DEFAULT_MODEL,
     },
     history,

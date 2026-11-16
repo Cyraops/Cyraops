@@ -29,8 +29,8 @@ describe("Assistant system prompt composition", () => {
 
 describe("Assistant tool allowlist", () => {
   it("only references tools that exist in the registry", async () => {
-    const { ASSISTANT_TOOLS } = await import("./ai/assistant/runtime");
-    const ids = JSON.parse(ASSISTANT_TOOLS) as string[];
+    const { assistantToolsJson } = await import("./ai/assistant/runtime");
+    const ids = JSON.parse(assistantToolsJson()) as string[];
     assert.ok(ids.length >= 10);
     for (const id of ids) {
       assert.ok(toolRegistry.getTool(id), `unregistered assistant tool: ${id}`);
