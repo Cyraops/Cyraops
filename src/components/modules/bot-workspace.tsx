@@ -14,6 +14,8 @@ import { AskBlock, FileBlock, StepBlock, TextBlock, toBlocks } from "@/component
 import { BotOrb } from "@/components/ai/bot-avatar";
 import { Button, Field, Modal, Textarea, useToast } from "@/components/ui";
 
+const SELECTION_KEY = "cyraops:bot:row";
+
 interface ChatItem {
   id: string;
   /** Set on optimistic rows so a failed send can find and remove them. */
@@ -520,6 +522,13 @@ export function BotWorkspace() {
   const selectAgent = useCallback(
     (slug: string | null) => {
       setActiveAgent(slug);
+      // The row you left the page on is the row you come back to.
+      try {
+        window.localStorage.setItem(SELECTION_KEY, slug ?? "");
+      } catch {
+        /* storage may be unavailable */
+      }
+      setVoiceOpen(slug === null);
       setConversationId("");
       setMessages([]);
       setPendingAction(null);
@@ -587,6 +596,32 @@ export function BotWorkspace() {
       await loadApprovalSettings();
       await loadBrief();
       await loadTeammates();
+      /**
+       * Come back to whatever was last chosen: the assistant shows its voice
+       * screen, a teammate or a bot shows that conversation.
+       */
+      let stored: string | null = null;
+      try {
+        stored = window.localStorage.getItem(SELECTION_KEY);
+      } catch {
+        stored = null;
+      }
+
+      if (stored !== null && stored !== "") {
+        // A bot was selected: open its chat, not the voice screen.
+        setVoiceOpen(false);
+        setActiveAgent(stored);
+        const list = await fetch(`/api/assistant/conversations?agent=${encodeURIComponent(stored)}`)
+          .then((r) => r.json())
+          .catch(() => ({}));
+        const latest = Array.isArray(list.conversations) ? list.conversations[0] : null;
+        if (latest?.id) await loadConversation(latest.id);
+        return;
+      }
+
+      // Assistant selected (or nothing remembered yet): its voice screen.
+      setVoiceOpen(true);
+
       const list = await fetch("/api/assistant/conversations").then((r) => r.json()).catch(() => ({}));
       const first = list.conversations?.[0];
       if (first) {
@@ -1087,7 +1122,6 @@ export function BotWorkspace() {
             onClick={() => {
               // The assistant, spoken to: this row opens the voice conversation.
               selectAgent(null);
-              setVoiceOpen(true);
             }}
             className={`flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition ${
               activeAgent === null ? "bg-accent/10" : "hover:bg-[var(--hover)]"
@@ -1306,8 +1340,11 @@ export function BotWorkspace() {
                 {brief?.user?.name ? `Hello, ${brief.user.name}.` : "What are we working on?"}
               </h2>
               <p className="text-meta leading-relaxed text-[var(--text-2)]">
-                I&apos;m your assistant, and I already know my way around your CRM — no need to explain the
-                business twice.
+                {activeAgent
+                  ? `I'm ${
+                      teammates.find((mate) => mate.slug === activeAgent)?.name ?? "this bot"
+                    } — ${teammates.find((mate) => mate.slug === activeAgent)?.role ?? "ready to work"}. Ask away.`
+                  : "I'm your assistant, and I already know my way around your CRM — no need to explain the business twice."}
               </p>
               <p className="text-meta leading-relaxed text-[var(--muted)]">
                 Tell me what you want in your own words: <em>&ldquo;what&rsquo;s due this week?&rdquo;</em>,{" "}
@@ -1525,7 +1562,15 @@ export function BotWorkspace() {
                 event.preventDefault();
                 void uploadFiles(event.clipboardData.files);
               }}
-              placeholder={dragging ? "Drop to attach…" : `Message ${assistantName}…`}
+              placeholder={
+                dragging
+                  ? "Drop to attach…"
+                  : `Message ${
+                      activeAgent
+                        ? teammates.find((mate) => mate.slug === activeAgent)?.name ?? "this bot"
+                        : assistantName
+                    }…`
+              }
               rows={1}
               maxLength={5000}
               className="min-h-9 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-prose outline-none placeholder:text-[var(--muted)]"
