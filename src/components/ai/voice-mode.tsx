@@ -415,7 +415,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       </div>
 
       {/* The conversation, readable and scrollable. */}
-      <div ref={scrollRef} className="soft-scrollbar min-h-0 flex-1 overflow-y-auto px-4 py-2">
+      <div ref={scrollRef} className="soft-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-2">
         <div className="mx-auto max-w-3xl space-y-2">
           {turns.map((turn) => (
             <div key={turn.id} className={`flex ${turn.role === "user" ? "justify-end" : "justify-start"}`}>

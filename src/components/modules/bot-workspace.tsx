@@ -1101,7 +1101,7 @@ export function BotWorkspace() {
   // Prompts chosen from what is actually true, so the first screen is about
   // this business rather than a generic demo.
   return (
-    <div className="relative grid h-[calc(100dvh-62px-2rem)] w-full grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] sm:h-[calc(100dvh-62px-3.5rem)] xl:grid-cols-[240px_minmax(0,1fr)_260px]" /* main carries p-4 / p-7, so the page must subtract it or the whole grid overflows the viewport and the composer sits below the fold */>
+    <div className="relative grid overflow-hidden h-[calc(100dvh-62px-2rem)] w-full grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] sm:h-[calc(100dvh-62px-3.5rem)] xl:grid-cols-[240px_minmax(0,1fr)_260px]" /* main carries p-4 / p-7, so the page must subtract it or the whole grid overflows the viewport and the composer sits below the fold */>
       {/* Left rail — conversations */}
       <aside className="hidden min-h-0 flex-col border-r border-[var(--border)] md:flex">
         <div className="flex items-center justify-between border-b border-[var(--border)] p-3">
