@@ -267,6 +267,7 @@ export function BotWorkspace() {
       description: string;
       status?: string;
       isTemplate?: boolean;
+      createdAt?: string | null;
       instructions?: string;
       tools?: string[];
     }>
@@ -433,6 +434,13 @@ export function BotWorkspace() {
       setTeammates(
         agents
           .filter((agent: any) => agent?.slug && agent.slug !== "chief_of_staff")
+          // Templates keep their shipped order; your bots follow by creation, so
+          // the newest sits directly above "New bot".
+          .sort((a: any, b: any) => {
+            if (Boolean(a.isTemplate) !== Boolean(b.isTemplate)) return a.isTemplate ? -1 : 1;
+            if (a.isTemplate) return 0;
+            return new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
+          })
           .map((agent: any) => ({
             id: agent.id as string,
             slug: agent.slug,
@@ -441,6 +449,7 @@ export function BotWorkspace() {
             description: agent.description ?? "",
             status: agent.status,
             isTemplate: Boolean(agent.isTemplate),
+            createdAt: (agent.createdAt ?? null) as string | null,
             instructions: (agent.systemPrompt ?? "") as string,
             tools: (() => {
               try { return JSON.parse(agent.tools ?? "[]") as string[]; } catch { return []; }
@@ -1150,17 +1159,20 @@ export function BotWorkspace() {
                   </span>
                 ))}
               </div>
-              <button
-                onClick={() => setBotModal({ mode: "create" })}
-                className={`mt-1 w-full items-center gap-2 rounded-lg border border-dashed border-[var(--border)] px-1.5 py-1.5 text-left text-[11px] font-semibold text-[var(--muted)] transition hover:border-accent/40 hover:text-accent ${teamOpen ? "flex" : "hidden"}`}
-              >
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--surface-2)]">
-                  <Plus size={11} />
-                </span>
-                New bot
-              </button>
             </>
           )}
+
+          {/* Always visible, and always under the last bot: creating one is not a
+              thing you should have to expand a menu to find. */}
+          <button
+            onClick={() => setBotModal({ mode: "create" })}
+            className="mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-[var(--border)] px-1.5 py-1.5 text-left text-[11px] font-semibold text-[var(--muted)] transition hover:border-accent/40 hover:text-accent"
+          >
+            <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--surface-2)]">
+              <Plus size={11} />
+            </span>
+            New bot
+          </button>
         </div>
 
         <div className="hidden">
@@ -1816,6 +1828,7 @@ export function BotWorkspace() {
           onClose={() => setBotModal(null)}
           onSaved={(message) => {
             toast(message);
+            setTeamOpen(true);
             void loadTeammates();
           }}
         />
