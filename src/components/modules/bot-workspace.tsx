@@ -666,21 +666,46 @@ export function BotWorkspace() {
     setListening(false);
   }, []);
 
-  const toggleListening = useCallback(() => {
+  const toggleListening = useCallback(async () => {
     if (listening) {
       stopListening();
       return;
     }
+
     const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognitionCtor) {
       setError("This browser cannot do voice input. Chrome or Safari work best.");
       return;
     }
+
+    /**
+     * Ask for the microphone explicitly.
+     *
+     * SpeechRecognition fails silently when permission is denied: no error, no
+     * result, just nothing. A getUserMedia call turns that into a sentence the
+     * person can act on.
+     */
+    try {
+      const stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
+      stream?.getTracks().forEach((track) => track.stop());
+    } catch (permissionError) {
+      const name = (permissionError as DOMException)?.name ?? "";
+      setError(
+        name === "NotAllowedError"
+          ? "Microphone is blocked. Allow it for this site in your browser settings, then try again."
+          : name === "NotFoundError"
+            ? "No microphone was found. Connect one and try again."
+            : "Could not reach the microphone. Check your system sound input settings."
+      );
+      return;
+    }
+
     setError(null);
     const recognition = new SpeechRecognitionCtor();
     recognition.lang = navigator.language?.toLowerCase().startsWith("hi") ? "hi-IN" : "en-IN";
     recognition.interimResults = true;
     recognition.continuous = false;
+
     recognition.onresult = (event: any) => {
       let transcript = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
@@ -688,7 +713,22 @@ export function BotWorkspace() {
       }
       if (transcript.trim()) setInput(transcript);
     };
-    recognition.onerror = () => setListening(false);
+
+    // Every failure used to look identical: the mic simply stopped.
+    recognition.onerror = (event: any) => {
+      const reason = event?.error ?? "";
+      setListening(false);
+      const messages: Record<string, string> = {
+        "not-allowed": "Microphone is blocked. Allow it for this site and try again.",
+        "service-not-allowed": "The browser's speech service is turned off on this device.",
+        "audio-capture": "No microphone was found. Connect one and try again.",
+        "no-speech": "I didn't hear anything. Try again and speak a little closer.",
+        network: "Voice needs an internet connection in Chrome, and it looks offline.",
+        "language-not-supported": "This browser cannot transcribe that language.",
+      };
+      setError(messages[reason] ?? `Voice input stopped (${reason || "unknown reason"}).`);
+    };
+
     recognition.onend = () => setListening(false);
     recognitionRef.current = recognition;
     try {
@@ -1480,10 +1520,14 @@ export function BotWorkspace() {
             </button>
             <button
               type="button"
-              onClick={toggleListening}
+              onClick={() => void toggleListening()}
               title={listening ? "Stop dictating" : "Dictate with your voice"}
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] transition ${
-                listening ? "bg-rose-500/10 text-rose-600 dark:text-rose-400" : "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--text)]"
+              aria-label={listening ? "Stop dictating" : "Dictate with your voice"}
+              aria-pressed={listening}
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition ${
+                listening
+                  ? "animate-pulse border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                  : "border-[var(--border)] text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--text)]"
               }`}
             >
               {listening ? <MicOff size={15} /> : <Mic size={15} />}
@@ -1491,6 +1535,13 @@ export function BotWorkspace() {
             <button
               type="button"
               onClick={() => {
+                // Turning it on when the device cannot speak is worse than a
+                // message: say so instead of staying silent.
+                if (!speakReplies && (typeof window === "undefined" || !window.speechSynthesis)) {
+                  setError("This browser cannot read replies aloud. Chrome, Safari and Edge can.");
+                  return;
+                }
+                setError(null);
                 setSpeakReplies((current) => {
                   const next = !current;
                   speakRepliesRef.current = next;
@@ -1499,6 +1550,8 @@ export function BotWorkspace() {
                 });
               }}
               title={speakReplies ? "Stop speaking replies" : "Speak replies aloud"}
+              aria-label={speakReplies ? "Stop speaking replies" : "Speak replies aloud"}
+              aria-pressed={speakReplies}
               className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] transition ${
                 speakReplies ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--text)]"
               }`}
@@ -1527,7 +1580,14 @@ export function BotWorkspace() {
             )}
           </div>
           <p className="mx-auto mt-1.5 max-w-3xl px-1 text-caption text-[var(--muted)]">
-            Enter to send · Shift + Enter for a new line · / for commands · ⌘K to search · drop or paste a file to attach
+            {listening ? (
+              <span className="flex items-center gap-1.5 font-semibold text-rose-600 dark:text-rose-400">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-rose-500" />
+                Listening — speak now, it stops when you pause.
+              </span>
+            ) : (
+              "Enter to send · Shift + Enter for a new line · / for commands · ⌘K to search · drop or paste a file to attach"
+            )}
           </p>
         </div>
       </section>
