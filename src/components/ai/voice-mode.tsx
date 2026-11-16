@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, MicOff, PhoneOff, Volume2, VolumeX } from "lucide-react";
+import { VoiceEarth, type EarthPhase } from "./voice-earth";
 
 type Phase = "idle" | "listening" | "thinking" | "speaking" | "error";
 
@@ -42,6 +43,8 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const [reply, setReply] = useState("");
   const [error, setError] = useState("");
   const [muted, setMuted] = useState(false);
+  const [personPulseAt, setPersonPulseAt] = useState(0);
+  const [speakPulseAt, setSpeakPulseAt] = useState(0);
 
   const recognitionRef = useRef<any>(null);
   const conversationRef = useRef(conversationId ?? "");
@@ -91,6 +94,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       }
       utterance.lang = preferred?.lang || SPEECH_LANG;
       utterance.rate = 1.02;
+      utterance.onboundary = () => setSpeakPulseAt(Date.now());
       utterance.onend = () => {
         if (activeRef.current) thenListen();
       };
@@ -129,6 +133,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
         else interim += result[0].transcript;
       }
       setHeard((finalText || interim).trim());
+      setPersonPulseAt(Date.now());
     };
 
     recognition.onerror = (event: any) => {
@@ -313,52 +318,14 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
 
   return (
     <div className="relative flex h-full min-h-0 flex-col items-center justify-center gap-6 overflow-hidden px-6">
-      {/* 3D orb: layered gradients, a rotating ring and a halo, all CSS. */}
-      <style>{`
-        @keyframes voiceSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes voiceBreathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-        @keyframes voiceRipple { 0% { transform: scale(0.9); opacity: 0.55; } 100% { transform: scale(1.6); opacity: 0; } }
-      `}</style>
 
-      <button
-        onClick={interrupt}
-        aria-label="Voice orb"
-        className="relative flex h-40 w-40 items-center justify-center rounded-full outline-none"
-      >
-        <span
-          aria-hidden
-          className="absolute inset-0 rounded-full"
-          style={{
-            background: "radial-gradient(60% 60% at 35% 30%, rgba(255,255,255,0.85), rgba(160,140,255,0.55) 40%, rgba(92,70,220,0.65) 70%, rgba(60,40,160,0.2) 100%)",
-            boxShadow: "inset -12px -16px 40px rgba(60,30,160,0.55), inset 14px 14px 30px rgba(255,255,255,0.55), 0 30px 60px rgba(92,70,220,0.35)",
-            animation: phase === "thinking" || phase === "speaking" ? "voiceBreathe 2.2s ease-in-out infinite" : "none",
-          }}
-        />
-        <span
-          aria-hidden
-          className="absolute -inset-4 rounded-full border-[3px] border-transparent"
-          style={{
-            background: "conic-gradient(from 0deg, rgba(120,100,255,0.0), rgba(120,100,255,0.75), rgba(255,255,255,0.0) 60%)",
-            WebkitMask: "radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px))",
-            mask: "radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 3px))",
-            animation: "voiceSpin 4.5s linear infinite",
-            opacity: phase === "listening" ? 1 : 0.45,
-          }}
-        />
-        {phase === "listening" &&
-          [0, 1].map((index) => (
-            <span
-              key={index}
-              aria-hidden
-              className="absolute inset-0 rounded-full border border-accent/40"
-              style={{ animation: `voiceRipple 2.4s ease-out ${index * 1.2}s infinite` }}
-            />
-          ))}
-        <span className="relative z-10 flex h-14 w-14 items-center justify-center rounded-full bg-white/25 backdrop-blur-sm">
-          {phase === "listening" ? <Mic size={26} className="text-white" /> : phase === "speaking" ? <Volume2 size={26} className="text-white" /> : <MicOff size={26} className="text-white/90" />}
-        </span>
-      </button>
 
+      <VoiceEarth
+        phase={phase as EarthPhase}
+        personPulseAt={personPulseAt}
+        speakPulseAt={speakPulseAt}
+        onTap={interrupt}
+      />
       <p className="text-meta font-semibold text-[var(--text)]">{label}</p>
 
       <div className="flex min-h-[64px] w-full max-w-[520px] flex-col items-center gap-1 text-center">
