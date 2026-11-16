@@ -18,7 +18,7 @@ interface Frame {
  * clicking or typing here acts on the same session, so you can step in
  * mid-task and hand it back.
  */
-export function BrowserPanel({ onClose }: { onClose: () => void }) {
+export function BrowserPanel({ onClose, embedded = false }: { onClose?: () => void; embedded?: boolean }) {
   const [frame, setFrame] = useState<Frame | null>(null);
   const [paused, setPaused] = useState(false);
   const [takeover, setTakeover] = useState(false);
@@ -92,19 +92,34 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <aside className="absolute inset-y-0 right-0 z-30 flex w-full max-w-[620px] flex-col border-l border-[var(--border)] bg-[var(--surface)] shadow-2xl">
-      <header className="flex h-[52px] shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] px-3">
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#e9f5ff] text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
-            <MousePointerClick size={13} />
+    <aside
+      className={
+        embedded
+          ? "flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[var(--surface)]"
+          : "absolute inset-y-0 right-0 z-30 flex w-full max-w-[620px] flex-col border-l border-[var(--border)] bg-[var(--surface)] shadow-2xl"
+      }
+    >
+      <header className={`flex shrink-0 items-center justify-between gap-2 border-b border-[var(--border)] ${embedded ? "h-9 px-2" : "h-[52px] px-3"}`}>
+        {embedded ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[#e9f5ff] text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+              <MousePointerClick size={11} />
+            </span>
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${frame?.image ? "bg-emerald-500" : "bg-[var(--muted)]"}`} />
           </span>
-          <span className="min-w-0">
-            <b className="block truncate text-xs text-[var(--text)]">{frame?.title || "Live browser"}</b>
-            <span className="block max-w-[240px] truncate text-caption text-[var(--muted)]">
-              {frame?.url || "Waiting for the assistant to open something…"}
+        ) : (
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#e9f5ff] text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
+              <MousePointerClick size={13} />
+            </span>
+            <span className="min-w-0">
+              <b className="block truncate text-xs text-[var(--text)]">{frame?.title || "Live browser"}</b>
+              <span className="block max-w-[240px] truncate text-caption text-[var(--muted)]">
+                {frame?.url || "Waiting for the assistant to open something…"}
+              </span>
             </span>
           </span>
-        </span>
+        )}
         <span className="flex shrink-0 items-center gap-1">
           <button
             onClick={() => setTakeover((value) => !value)}
@@ -116,7 +131,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
             title="Take control of the browser"
           >
             <MousePointerClick size={11} />
-            {takeover ? "In control" : "Take over"}
+            {embedded ? (takeover ? "In control" : "Control") : takeover ? "In control" : "Take over"}
           </button>
           <button
             onClick={() => void send({ type: "back" })}
@@ -133,13 +148,15 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
           >
             <RefreshCw size={12} />
           </button>
-          <button
-            onClick={onClose}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
-            aria-label="Close browser"
-          >
-            <X size={14} />
-          </button>
+          {!embedded && (
+            <button
+              onClick={onClose}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
+              aria-label="Close browser"
+            >
+              <X size={14} />
+            </button>
+          )}
         </span>
       </header>
 
@@ -174,7 +191,7 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="shrink-0 border-t border-[var(--border)] px-3 py-2">
-        {error && <p className="mb-1 text-caption text-rose-600 dark:text-rose-400">{error}</p>}
+        {error && !embedded && <p className="mb-1 text-caption text-rose-600 dark:text-rose-400">{error}</p>}
         <input
           ref={keyboardRef}
           onKeyDown={onKeyDown}
@@ -182,11 +199,13 @@ export function BrowserPanel({ onClose }: { onClose: () => void }) {
           placeholder={takeover ? "Type to drive the page — Enter, Tab and arrows work" : "Take over to type"}
           className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-meta outline-none placeholder:text-[var(--muted)] disabled:opacity-60"
         />
-        <div className="mt-1 flex items-center justify-between text-caption text-[var(--muted)]">
-          <span>
-            {takeover ? "You have control — the assistant sees the same page." : "Read-only view of what the assistant is doing."}
-          </span>
-          <button onClick={() => setPaused((value) => !value)} className="font-semibold text-accent">
+        <div className={`mt-1 flex items-center justify-between text-caption text-[var(--muted)] ${embedded ? "gap-1" : ""}`}>
+          {!embedded && (
+            <span>
+              {takeover ? "You have control — the assistant sees the same page." : "Read-only view of what the assistant is doing."}
+            </span>
+          )}
+          <button onClick={() => setPaused((value) => !value)} className="shrink-0 font-semibold text-accent">
             {paused ? "Resume live" : "Pause"}
           </button>
         </div>

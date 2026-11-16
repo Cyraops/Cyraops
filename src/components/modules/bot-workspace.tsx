@@ -1035,7 +1035,7 @@ export function BotWorkspace() {
   })();
 
   return (
-    <div className="relative grid h-[calc(100dvh-62px)] w-full grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[240px_minmax(0,1fr)_260px]">
+    <div className="relative grid h-[calc(100dvh-62px-2rem)] w-full grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] sm:h-[calc(100dvh-62px-3.5rem)] xl:grid-cols-[240px_minmax(0,1fr)_260px]" /* main carries p-4 / p-7, so the page must subtract it or the whole grid overflows the viewport and the composer sits below the fold */>
       {/* Left rail — conversations */}
       <aside className="hidden min-h-0 flex-col border-r border-[var(--border)] md:flex">
         <div className="flex items-center justify-between border-b border-[var(--border)] p-3">
@@ -1679,7 +1679,7 @@ export function BotWorkspace() {
       </section>
 
       {/* Right rail — transparency */}
-      <aside className="hidden min-h-0 flex-col overflow-y-auto border-l border-[var(--border)] p-4 xl:flex">
+      <aside className="hidden h-full min-h-0 flex-col overflow-hidden border-l border-[var(--border)] p-4 xl:flex">
         {/* "What it can see" was a frozen list that never matched the selected
             agent's tools, so it is gone rather than kept as decoration. */}
         <button
@@ -1741,6 +1741,24 @@ export function BotWorkspace() {
             Reads run instantly. Writes ask first, and a run that read untrusted content always asks.
           </p>
         )}
+
+        {/* The assistant's browser lives here now: it is something you watch and
+            occasionally drive, not a thing that covers the conversation. */}
+        <button
+          onClick={() => setBrowserOpen((open) => !open)}
+          aria-expanded={browserOpen}
+          aria-controls="rail-browser"
+          className="mb-2 mt-4 flex w-full items-center gap-1.5 text-left text-caption font-bold uppercase tracking-widest text-[var(--muted)] transition hover:text-[var(--text)]"
+        >
+          <ChevronDown size={11} className={`transition-transform ${browserOpen ? "" : "-rotate-90"}`} />
+          <Globe size={12} />
+          <span className="flex-1">Live browser</span>
+        </button>
+        {browserOpen && (
+          <div id="rail-browser" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)]">
+            <BrowserPanel embedded />
+          </div>
+        )}
       </aside>
 
       <RoutinesModal open={routinesOpen} onClose={() => setRoutinesOpen(false)} />
@@ -1757,7 +1775,6 @@ export function BotWorkspace() {
         />
       )}
 
-      {browserOpen && !openPage && <BrowserPanel onClose={() => setBrowserOpen(false)} />}
 
       {botModal && (
         <BotDialog
