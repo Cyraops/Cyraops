@@ -28,6 +28,11 @@ const ASSISTANT_TOOL_IDS = [
   "search_documents", "read_authorized_document", "search_history", "remember", "forget_memory",
   "start_team_goal", "team_goal_status", "control_team_goal",
   "create_page", "update_page", "analyse_table", "send_email",
+  // Triage, mail, schedule and routines: the work a desk actually does.
+  "update_task", "search_emails", "list_schedule", "create_routine",
+  // Records the assistant could already promise but not create.
+  "create_contact", "update_contact", "create_company", "update_company",
+  "qualify_lead", "analyze_deal", "research_company_site",
   "summarize_thread",
   "create_lead", "update_lead",
   "create_deal", "update_deal",

@@ -1,4 +1,6 @@
 import { db } from "@/lib/db";
+import { logActivity } from "@/lib/auth";
+import { createRoutine } from "../automation/routine-create";
 import { analyseUploadedTable } from "@/lib/pages/table-analysis";
 import { researchCompanySite, signalsFromResearch, evidenceFromResearch } from "@/lib/company-research";
 import { toolRegistry } from "./registry";
@@ -734,6 +736,225 @@ export const CRM_TOOLS: ToolDefinition[] = [
   // ==========================================
   // COMMUNICATION & APPROVAL
   // ==========================================
+
+  {
+    id: "update_task",
+    name: "Update Ticket",
+    description:
+      "Changes a task or ticket: status, priority, assignee, resolution, or the subject and description. Accepts the ticket number the user sees (#SR-12) or the internal id. Triage is open to any teammate.",
+    category: "tasks",
+    riskClass: "CLASS_B",
+    requiresApproval: false,
+    inputSchema: {
+      task: "string — the ticket id, or its number as #SR-12",
+      status: "BACKLOG | TODO | IN_PROGRESS | IN_REVIEW | DONE (optional)",
+      priority: "LOW | MEDIUM | HIGH | URGENT (optional)",
+      assigneeEmail: "string — assign to this teammate (optional); empty string unassigns",
+      resolution: "string — what was done (optional)",
+      title: "string (optional)",
+      description: "string (optional)",
+    },
+    async execute(
+      input: { task: string; status?: TaskStatus; priority?: Priority; assigneeEmail?: string; resolution?: string; title?: string; description?: string },
+      context: ToolExecutionContext
+    ) {
+      const raw = String(input.task ?? "").trim();
+      const numberMatch = /(?:#?SR-)?(\d+)$/i.exec(raw);
+      const task = raw
+        ? await db.task.findFirst({
+            where: /^c[a-z0-9]{20,}$/i.test(raw)
+              ? { id: raw, archivedAt: null }
+              : numberMatch
+                ? { number: Number(numberMatch[1]), archivedAt: null }
+                : { id: raw, archivedAt: null },
+            select: { id: true, number: true, title: true, status: true, closedAt: true, projectId: true },
+          })
+        : null;
+      if (!task) return { success: false, error: `No ticket found for "${raw}". Use the #SR-number shown on the ticket.` };
+
+      // An assignee is addressed by email, because that is what a person knows.
+      let assigneeUserId: string | null | undefined;
+      if (input.assigneeEmail !== undefined) {
+        if (input.assigneeEmail.trim() === "") {
+          assigneeUserId = null;
+        } else {
+          const person = await db.user.findFirst({
+            where: { email: { equals: input.assigneeEmail.trim(), mode: "insensitive" }, disabledAt: null },
+            select: { id: true, name: true },
+          });
+          if (!person) return { success: false, error: `No teammate has the email ${input.assigneeEmail}.` };
+          assigneeUserId = person.id;
+        }
+      }
+
+      const closing = input.status === "DONE" && !task.closedAt;
+      const reopening = input.status !== undefined && input.status !== "DONE";
+      const updated = await db.task.update({
+        where: { id: task.id },
+        data: {
+          ...(input.status !== undefined ? { status: input.status } : {}),
+          ...(input.priority !== undefined ? { priority: input.priority } : {}),
+          ...(input.resolution !== undefined ? { resolution: input.resolution } : {}),
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(assigneeUserId !== undefined ? { assigneeId: assigneeUserId } : {}),
+          ...(closing ? { closedAt: new Date() } : {}),
+          ...(reopening ? { closedAt: null } : {}),
+        },
+        select: { id: true, number: true, title: true, status: true, priority: true, resolution: true, closedAt: true },
+      });
+      if (assigneeUserId !== undefined) {
+        await db.taskAssignee.deleteMany({ where: { taskId: task.id } });
+        if (assigneeUserId) await db.taskAssignee.create({ data: { taskId: task.id, userId: assigneeUserId } }).catch(() => null);
+      }
+      await logActivity({
+        action: "updated",
+        entity: "task",
+        entityId: task.id,
+        summary: `updated ticket ${updated.title} from the assistant`,
+        userId: context.userId,
+        projectId: task.projectId,
+        taskId: task.id,
+      });
+      return { success: true, data: { ticket: `#SR-${updated.number}`, ...updated } };
+    },
+  },
+  {
+    id: "search_emails",
+    name: "Search Email",
+    description:
+      "Searches the shared company mailbox and returns matching messages with sender, subject, date and a snippet. Use it to answer 'what did the client send', 'find the invoice email', 'anything from X this week'.",
+    category: "communication",
+    riskClass: "CLASS_A",
+    requiresApproval: false,
+    readOnly: true,
+    inputSchema: {
+      query: "string — words to look for in the subject, snippet or sender (optional)",
+      from: "string — only messages from this address or name (optional)",
+      days: "number — how far back to look, default 30",
+      unreadOnly: "boolean — optional",
+    },
+    async execute(input: { query?: string; from?: string; days?: number; unreadOnly?: boolean }) {
+      if (!getMailboxConfig().config.isConfigured) {
+        return { success: false, error: "The company mailbox is not configured on this server, so there is no mail to search." };
+      }
+      const account = await EmailService.getOrCreateAccount();
+      const since = new Date(Date.now() - Math.max(1, input.days ?? 30) * 86_400_000);
+      const where: any = { accountId: account.id, receivedAt: { gte: since } };
+      if (input.unreadOnly) where.isRead = false;
+      if (input.from?.trim()) {
+        where.OR = [
+          { fromEmail: { contains: input.from.trim(), mode: "insensitive" } },
+          { fromName: { contains: input.from.trim(), mode: "insensitive" } },
+        ];
+      }
+      if (input.query?.trim()) {
+        const q = input.query.trim();
+        where.AND = [
+          ...(where.AND ?? []),
+          {
+            OR: [
+              { subject: { contains: q, mode: "insensitive" } },
+              { snippet: { contains: q, mode: "insensitive" } },
+              { fromEmail: { contains: q, mode: "insensitive" } },
+              { fromName: { contains: q, mode: "insensitive" } },
+            ],
+          },
+        ];
+      }
+      const messages = await db.emailMessage.findMany({
+        where,
+        orderBy: { receivedAt: "desc" },
+        take: 10,
+        select: { id: true, subject: true, fromName: true, fromEmail: true, receivedAt: true, snippet: true, isRead: true },
+      });
+      return {
+        success: true,
+        data: {
+          count: messages.length,
+          searchedDays: input.days ?? 30,
+          messages: messages.map((m) => ({
+            subject: m.subject,
+            from: m.fromName ? `${m.fromName} <${m.fromEmail}>` : m.fromEmail,
+            receivedAt: m.receivedAt,
+            unread: !m.isRead,
+            snippet: (m.snippet ?? "").slice(0, 300),
+          })),
+        },
+      };
+    },
+  },
+  {
+    id: "list_schedule",
+    name: "List Schedule",
+    description:
+      "Lists what is due soon: open tasks with a due date, their owner and project. Use it for 'what is on my plate', 'what is due this week', 'what can I move Thursday'.",
+    category: "tasks",
+    riskClass: "CLASS_A",
+    requiresApproval: false,
+    readOnly: true,
+    inputSchema: { days: "number — how far ahead to look, default 7" },
+    async execute(input: { days?: number }, context: ToolExecutionContext) {
+      const days = Math.min(60, Math.max(1, input.days ?? 7));
+      const until = new Date(Date.now() + days * 86_400_000);
+      const tasks = await db.task.findMany({
+        where: { archivedAt: null, status: { not: "DONE" }, dueDate: { not: null, lte: until } },
+        orderBy: { dueDate: "asc" },
+        take: 25,
+        select: {
+          id: true, number: true, title: true, status: true, priority: true, dueDate: true,
+          project: { select: { name: true } },
+          assignee: { select: { name: true } },
+        },
+      });
+      return {
+        success: true,
+        data: {
+          window: `next ${days} day${days === 1 ? "" : "s"}`,
+          count: tasks.length,
+          items: tasks.map((t) => ({
+            ticket: `#SR-${t.number}`,
+            title: t.title,
+            due: t.dueDate,
+            status: t.status,
+            priority: t.priority,
+            owner: t.assignee?.name ?? "Unassigned",
+            project: t.project?.name ?? "—",
+          })),
+        },
+      };
+    },
+  },
+  {
+    id: "create_routine",
+    name: "Create Routine",
+    description:
+      "Schedules recurring work for an AI teammate: a name, a cron expression, which agent, and what it should do each time. Use it when the user says 'every morning', 'each Monday', 'keep an eye on X and do Y'.",
+    category: "system",
+    riskClass: "CLASS_B",
+    requiresApproval: true,
+    inputSchema: {
+      name: "string",
+      cron: "string — five-field cron, e.g. '0 9 * * 1-5' for 9am on weekdays",
+      agentSlug: "string — e.g. research, sales, communication",
+      instructions: "string — what the agent should do on each run",
+    },
+    async execute(input: { name: string; cron: string; agentSlug: string; instructions: string }, context: ToolExecutionContext) {
+      const result = await createRoutine({
+        name: input.name,
+        cron: input.cron,
+        agentSlug: input.agentSlug,
+        instructions: input.instructions,
+        userId: context.userId,
+      });
+      if (!result.ok) return { success: false, error: result.error };
+      const routine = result.routine;
+      return {
+        success: true,
+        data: { routine: routine.name, agent: routine.agentName, cron: routine.cronExpression, nextRunAt: routine.nextRunAt },
+      };
+    },
+  },
   {
     id: "send_email",
     name: "Send Email",
