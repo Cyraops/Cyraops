@@ -403,7 +403,9 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* The planet floats over the conversation: the chat keeps the full pane
           and simply passes behind the Earth and the Moon. */}
-      <div className="pointer-events-none absolute inset-x-0 top-2 z-10 flex flex-col items-center gap-1">
+      {/* Centred with left/translate rather than flex: this holds whatever the
+          parent's width or display turns out to be. */}
+      <div className="pointer-events-none absolute left-1/2 top-2 z-10 flex w-40 -translate-x-1/2 flex-col items-center gap-1">
         <VoiceEarth
           phase={phase as EarthPhase}
           personPulseAt={personPulseAt}
