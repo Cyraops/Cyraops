@@ -657,9 +657,10 @@ export function TicketDesk() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-            <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px 32px" : "minmax(0,1fr) 150px 110px 90px 160px 150px 32px", gap: 12, alignItems: "center" }}
+            <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px 32px" : "minmax(0,1fr) 130px 130px 100px 80px 140px 140px 32px", gap: 12, alignItems: "center" }}
               className="ticket-grid-head relative border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
               <span>Subject</span>
+              {!narrow && <span>Project</span>}
               {!narrow && <span>Contact</span>}
               <span>Status</span>
               {!narrow && <span>Priority</span>}
@@ -760,7 +761,7 @@ export function TicketDesk() {
                           setTab("details");
                         }
                       }}
-                      style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px 32px" : "minmax(0,1fr) 150px 110px 90px 160px 150px 32px", gap: 12, alignItems: "center" }}
+                      style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px 32px" : "minmax(0,1fr) 130px 130px 100px 80px 140px 140px 32px", gap: 12, alignItems: "center" }}
                       className="ticket-grid w-full cursor-pointer border-b border-[var(--border)] px-3 py-2.5 text-left transition hover:bg-[var(--hover)]"
                     >
                       <span className="min-w-0">
@@ -771,6 +772,11 @@ export function TicketDesk() {
                           {t.groupName && <span>· {t.groupName}</span>}
                         </span>
                       </span>
+                      {!narrow && (
+                        <span className="min-w-0 truncate text-caption text-[var(--muted)]" title={t.project?.name ?? "No project"}>
+                          {t.project?.name ?? "—"}
+                        </span>
+                      )}
                       {!narrow && (
                         <span className="flex min-w-0 items-center gap-1.5">
                           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-[9px] font-bold uppercase text-[var(--muted)]">
