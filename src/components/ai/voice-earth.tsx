@@ -47,7 +47,9 @@ export function VoiceEarth({ phase, personPulseAt, speakPulseAt, onTap, classNam
     const container = canvas.parentElement;
     const size = () => Math.min(container?.clientWidth || 240, container?.clientHeight || 240);
 
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setClearColor(0x000000, 0);
+    renderer.setClearAlpha(0);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
@@ -217,7 +219,7 @@ export function VoiceEarth({ phase, personPulseAt, speakPulseAt, onTap, classNam
   return (
     <div className={`relative cursor-pointer select-none ${className ?? "h-56 w-56"}`} role="button" aria-label="Voice orb" tabIndex={0}
       onClick={onTap} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onTap(); }}>
-      <canvas ref={canvasRef} className="h-full w-full" aria-hidden />
+      <canvas ref={canvasRef} className="h-full w-full" style={{ background: "transparent" }} aria-hidden />
     </div>
   );
 }
