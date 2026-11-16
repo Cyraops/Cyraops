@@ -179,7 +179,11 @@ export function TicketDesk() {
   const addTicket = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const text = quickAdd.trim();
-    if (!text) return;
+    if (!text) {
+      // A disabled button looks broken: say what is missing instead.
+      toast("Type what the ticket is about first", "error");
+      return;
+    }
     setAdding(true);
     try {
       // The same @tasks path the bot uses, so chat and desk cannot diverge.
@@ -485,7 +489,7 @@ export function TicketDesk() {
               aria-label="New ticket"
               className="h-10 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm outline-none focus:border-accent"
             />
-            <Button disabled={adding || !quickAdd.trim()}>
+            <Button type="submit" disabled={adding}>
               {adding ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Add ticket
             </Button>
           </form>
