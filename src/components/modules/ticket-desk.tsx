@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  ArrowLeft,
   Check,
   ChevronRight,
   CircleDot,
@@ -212,343 +213,315 @@ export function TicketDesk() {
 
   const openCount = tickets.filter((t) => t.status !== "DONE").length;
 
+  const propRow = (label: string, control: React.ReactNode, hint?: string) => (
+    <label className="block">
+      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-[var(--muted)]">{label}</span>
+      {control}
+      {hint && <span className="mt-0.5 block text-[10px] text-[var(--muted)]">{hint}</span>}
+    </label>
+  );
+  const selectCls =
+    "h-8 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-caption outline-none focus:border-accent";
+  const inputCls = selectCls;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 p-4 sm:p-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-xl font-extrabold tracking-tight">Tickets</h1>
-          <p className="text-caption text-[var(--muted)]">
-            {openCount} open · {tickets.length} total · every task is a ticket, with a number, a requester and a resolution
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <label className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5">
-            <Search size={13} className="text-[var(--muted)]" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search tickets…"
-              aria-label="Search tickets"
-              className="w-44 bg-transparent text-meta outline-none placeholder:text-[var(--muted)]"
-            />
-          </label>
-          <div className="flex h-9 items-center rounded-lg border border-[var(--border)] p-0.5">
-            {(["open", "all", "closed"] as const).map((value) => (
-              <button
-                key={value}
-                onClick={() => setStatusFilter(value)}
-                aria-pressed={statusFilter === value}
-                className={`h-8 rounded-md px-2.5 text-caption font-semibold capitalize transition ${
-                  statusFilter === value ? "bg-accent/10 text-accent" : "text-[var(--muted)] hover:bg-[var(--hover)]"
-                }`}
-              >
-                {value}
-              </button>
-            ))}
+      {/* ---------------- A ticket is open: the ticket owns the screen ---------------- */}
+      {selected ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setSelectedId(null)}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border)] px-2.5 text-caption font-semibold text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
+            >
+              <ArrowLeft size={13} /> All tickets
+            </button>
+            <span className="font-mono text-caption text-[var(--muted)]">{ticketRef(selected.number)}</span>
+            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusTone(selected.status)}`}>
+              {STATUS_LABEL[selected.status] ?? selected.status}
+            </span>
+            {saving && <Loader2 size={13} className="animate-spin text-[var(--muted)]" />}
           </div>
-        </div>
-      </header>
 
-      {approvals > 0 && (
-        <div className="flex items-center gap-2 rounded-xl border border-amber-300/60 bg-amber-50/60 px-3 py-2 text-meta dark:border-amber-900/40 dark:bg-amber-950/20">
-          <ShieldCheck size={14} className="text-amber-600" />
-          <span className="font-semibold">{approvals} agent step{approvals === 1 ? "" : "s"} waiting for your approval</span>
-          <a href="/ai" className="ml-auto text-caption font-semibold text-accent underline decoration-dotted underline-offset-2">
-            Review in the bot
-          </a>
-        </div>
-      )}
+          <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            {/* The conversation */}
+            <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+              <header className="border-b border-[var(--border)] px-5 py-4">
+                <h1 className="text-lg font-bold leading-snug">{selected.title}</h1>
+                <p className="mt-1 text-caption text-[var(--muted)]">
+                  <span className="font-semibold text-[var(--text)]">{selected.requesterName || selected.creator?.name || "Unknown"}</span>
+                  {" reported "}
+                  {formatDate(selected.createdAt)}
+                  {selected.source ? ` via ${humanise(selected.source)}` : ""}
+                  {selected.requesterEmail ? ` · ${selected.requesterEmail}` : ""}
+                </p>
+              </header>
 
-      <form onSubmit={addTicket} className="flex gap-2">
-        <input
-          value={quickAdd}
-          onChange={(e) => setQuickAdd(e.target.value)}
-          placeholder="New ticket… e.g. @tasks bug: invoice page crashes when saving"
-          aria-label="New ticket"
-          className="h-10 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm outline-none focus:border-accent"
-        />
-        <Button disabled={adding || !quickAdd.trim()}>
-          {adding ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Add ticket
-        </Button>
-      </form>
-
-      <div className="flex min-h-0 flex-1 gap-4">
-        {/* Queue */}
-        <div className={`min-w-0 flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)] ${selected ? "hidden lg:block" : ""}`}>
-          <div className="grid grid-cols-[1fr_120px_110px_90px_1fr] gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
-            <span>Subject</span>
-            <span>Contact</span>
-            <span>Status</span>
-            <span>Priority</span>
-            <span>Assigned · created</span>
-          </div>
-          <div className="max-h-[calc(100vh-320px)] overflow-y-auto">
-            {loading ? (
-              <p className="px-3 py-8 text-center text-meta text-[var(--muted)]"><Loader2 size={14} className="mx-auto animate-spin" /></p>
-            ) : visible.length === 0 ? (
-              <p className="px-3 py-10 text-center text-meta text-[var(--muted)]">
-                No tickets here yet. Add one above, or ask the bot in chat with <span className="font-semibold">@tasks</span>.
-              </p>
-            ) : (
-              visible.map((t) => {
-                const owners = t.assignees ?? [];
-                const contact = t.requesterName || t.creator?.name || "Unknown";
-                return (
+              <nav className="flex gap-1 border-b border-[var(--border)] px-3" role="tablist">
+                {(["details", "activity", "resolution"] as const).map((value) => (
                   <button
-                    key={t.id}
-                    onClick={() => { setSelectedId(t.id); setTab("details"); }}
-                    className={`grid w-full grid-cols-[1fr_120px_110px_90px_1fr] gap-3 border-b border-[var(--border)] px-3 py-2.5 text-left transition hover:bg-[var(--hover)] ${
-                      selectedId === t.id ? "bg-accent/5" : ""
+                    key={value}
+                    role="tab"
+                    aria-selected={tab === value}
+                    onClick={() => setTab(value)}
+                    className={`border-b-2 px-3 py-2.5 text-caption font-semibold capitalize transition ${
+                      tab === value ? "border-accent text-accent" : "border-transparent text-[var(--muted)] hover:text-[var(--text)]"
                     }`}
                   >
-                    <span className="min-w-0">
-                      <span className={`block truncate text-meta font-semibold ${t.status === "DONE" ? "text-[var(--muted)]" : ""}`}>
-                        {t.title}
-                      </span>
-                      <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-[var(--muted)]">
-                        <span className="font-mono">{ticketRef(t.number)}</span>
-                        {t.type && <span>· {humanise(t.type)}</span>}
-                        {t.groupName && <span>· {t.groupName}</span>}
-                      </span>
-                    </span>
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-[9px] font-bold uppercase text-[var(--muted)]">
-                        {contact.slice(0, 1)}
-                      </span>
-                      <span className="truncate text-caption text-[var(--muted)]">{contact}</span>
-                    </span>
-                    <span>
-                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone(t.status)}`}>
-                        {STATUS_LABEL[t.status] ?? t.status}
-                      </span>
-                    </span>
-                    <span className="flex items-center gap-1.5 text-caption capitalize text-[var(--muted)]">
-                      <span className={`h-2 w-2 rounded-sm ${priorityDot(t.priority)}`} />
-                      {t.priority.toLowerCase()}
-                    </span>
-                    <span className="min-w-0 text-caption text-[var(--muted)]">
-                      <span className="block truncate">
-                        {owners.length ? owners.map((o) => o.name).join(", ") : "Unassigned"}
-                      </span>
-                      <span className="flex items-center gap-1 text-[10px]">
-                        <Clock size={9} /> {formatDate(t.createdAt)}
-                      </span>
-                    </span>
+                    {value}
                   </button>
-                );
-              })
-            )}
-          </div>
-        </div>
+                ))}
+              </nav>
 
-        {/* Detail */}
-        {selected && (
-          <aside className="flex w-full max-w-[520px] flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-            <header className="border-b border-[var(--border)] px-4 py-3">
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusTone(selected.status)}`}>
-                    {STATUS_LABEL[selected.status] ?? selected.status}
-                  </span>
-                  <span className="font-mono text-caption text-[var(--muted)]">{ticketRef(selected.number)}</span>
-                </div>
-                <button onClick={() => setSelectedId(null)} aria-label="Close ticket panel" className="rounded-md p-1 text-[var(--muted)] hover:bg-[var(--hover)]">
-                  <X size={14} />
-                </button>
-              </div>
-              <h2 className="mt-2 text-sm font-bold leading-snug">{selected.title}</h2>
-              <p className="mt-1 text-caption text-[var(--muted)]">
-                <span className="font-semibold text-[var(--text)]">{selected.requesterName || selected.creator?.name || "Unknown"}</span>
-                {" reported "}
-                {formatDate(selected.createdAt)}
-                {selected.source ? ` via ${humanise(selected.source)}` : ""}
-              </p>
-              {selected.requesterEmail && (
-                <p className="mt-0.5 text-caption text-[var(--muted)]">To: {selected.requesterEmail}</p>
-              )}
-            </header>
-
-            <nav className="flex gap-1 border-b border-[var(--border)] px-2 pt-2" role="tablist">
-              {(["details", "activity", "resolution"] as const).map((value) => (
-                <button
-                  key={value}
-                  role="tab"
-                  aria-selected={tab === value}
-                  onClick={() => setTab(value)}
-                  className={`rounded-t-md px-3 py-2 text-caption font-semibold capitalize transition ${
-                    tab === value ? "border-b-2 border-accent text-accent" : "text-[var(--muted)] hover:text-[var(--text)]"
-                  }`}
-                >
-                  {value}
-                </button>
-              ))}
-            </nav>
-
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-              {tab === "details" && (
-                <div className="space-y-4">
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                {tab === "details" && (
                   <section>
-                    <h3 className="mb-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">Description</h3>
+                    <h2 className="mb-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">Description</h2>
                     <p className="whitespace-pre-wrap text-meta leading-relaxed">{selected.description || "No description."}</p>
-                  </section>
-
-                  <section className="rounded-lg border border-[var(--border)] p-3">
-                    <h3 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">Properties</h3>
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <label className="block">
-                        <span className="mb-1 block text-[10px] font-semibold text-[var(--muted)]">Priority</span>
-                        <select
-                          value={selected.priority}
-                          disabled={saving === "priority"}
-                          onChange={(e) => void patch(selected.id, { priority: e.target.value }, "priority")}
-                          className="h-8 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-caption outline-none focus:border-accent"
-                        >
-                          {PRIORITIES.map((p) => <option key={p} value={p}>{humanise(p)}</option>)}
-                        </select>
-                      </label>
-                      <label className="block">
-                        <span className="mb-1 block text-[10px] font-semibold text-[var(--muted)]">Status</span>
-                        <select
-                          value={selected.status}
-                          disabled={saving === "status"}
-                          onChange={(e) => void patch(selected.id, { status: e.target.value }, "status")}
-                          className="h-8 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-caption outline-none focus:border-accent"
-                        >
-                          {[...STATUSES, "BACKLOG"].map((s) => <option key={s} value={s}>{STATUS_LABEL[s] ?? s}</option>)}
-                        </select>
-                      </label>
-                      <label className="block">
-                        <span className="mb-1 block text-[10px] font-semibold text-[var(--muted)]">Source</span>
-                        <select
-                          value={selected.source ?? ""}
-                          disabled={saving === "source"}
-                          onChange={(e) => void patch(selected.id, { source: e.target.value || null }, "source")}
-                          className="h-8 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-caption outline-none focus:border-accent"
-                        >
-                          <option value="">—</option>
-                          {SOURCES.map((s) => <option key={s} value={s}>{humanise(s)}</option>)}
-                        </select>
-                      </label>
-                      <label className="block">
-                        <span className="mb-1 block text-[10px] font-semibold text-[var(--muted)]">Type</span>
-                        <select
-                          value={selected.type ?? ""}
-                          disabled={saving === "type"}
-                          onChange={(e) => void patch(selected.id, { type: e.target.value || null }, "type")}
-                          className="h-8 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-caption outline-none focus:border-accent"
-                        >
-                          <option value="">—</option>
-                          {TYPES.map((t) => <option key={t} value={t}>{humanise(t)}</option>)}
-                        </select>
-                      </label>
-                      <label className="block">
-                        <span className="mb-1 block text-[10px] font-semibold text-[var(--muted)]">Group</span>
-                        <input
-                          defaultValue={selected.groupName ?? ""}
-                          onBlur={(e) => e.target.value !== (selected.groupName ?? "") && void patch(selected.id, { groupName: e.target.value || null }, "group")}
-                          placeholder="e.g. ANZ_Wintel"
-                          className="h-8 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-caption outline-none focus:border-accent"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="mb-1 block text-[10px] font-semibold text-[var(--muted)]">Category</span>
-                        <input
-                          defaultValue={selected.category ?? ""}
-                          onBlur={(e) => e.target.value !== (selected.category ?? "") && void patch(selected.id, { category: e.target.value || null }, "category")}
-                          placeholder="e.g. Cloud alarm"
-                          className="h-8 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-caption outline-none focus:border-accent"
-                        />
-                      </label>
-                      <label className="block">
-                        <span className="mb-1 block text-[10px] font-semibold text-[var(--muted)]">Agent</span>
-                        <select
-                          value={selected.assignees?.find((a) => a.kind === "user")?.id ?? ""}
-                          disabled={saving === "assignee"}
-                          onChange={(e) => void patch(selected.id, { assigneeIds: e.target.value ? [e.target.value] : [] }, "assignee")}
-                          className="h-8 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-caption outline-none focus:border-accent"
-                        >
-                          <option value="">Unassigned</option>
-                          {team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-                        </select>
-                      </label>
-                      <label className="block">
-                        <span className="mb-1 block text-[10px] font-semibold text-[var(--muted)]">Kind</span>
-                        <span className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-caption">
-                          <CircleDot size={11} className="text-[var(--muted)]" />
-                          {selected.kind ? selected.kind.toLowerCase() : "unclassified"}
-                        </span>
-                      </label>
-                    </div>
                     {selected.project && (
-                      <p className="mt-2 flex items-center gap-1 text-[10px] text-[var(--muted)]">
+                      <p className="mt-4 flex items-center gap-1 text-[10px] text-[var(--muted)]">
                         <ChevronRight size={10} /> Project: {selected.project.name}
                       </p>
                     )}
                   </section>
-                </div>
-              )}
+                )}
 
-              {tab === "activity" && (
-                <div className="space-y-3">
-                  {comments.length === 0 && (
-                    <p className="text-caption text-[var(--muted)]">No notes yet. Anything you add here is kept with the ticket.</p>
-                  )}
-                  {comments.map((c) => (
-                    <div key={c.id} className="rounded-lg border border-[var(--border)] p-2.5">
-                      <p className="text-[10px] font-semibold text-[var(--muted)]">
-                        {c.author?.name ?? "Someone"} · {formatDate(c.createdAt)}
-                      </p>
-                      <p className="mt-1 whitespace-pre-wrap text-meta">{c.body}</p>
-                    </div>
-                  ))}
-                  <div className="flex gap-2">
-                    <input
-                      value={comment}
-                      onChange={(e) => setComment(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && void addComment()}
-                      placeholder="Add an internal note…"
-                      aria-label="Add an internal note"
-                      className="h-9 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 text-meta outline-none focus:border-accent"
-                    />
-                    <Button onClick={() => void addComment()} disabled={saving === "comment" || !comment.trim()}>
-                      <MessageSquare size={12} /> Note
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {tab === "resolution" && (
-                <div className="space-y-3">
-                  <p className="text-caption text-[var(--muted)]">
-                    What we actually did. Kept separate from the description, which is what the requester said.
-                  </p>
-                  <textarea
-                    value={resolution}
-                    onChange={(e) => setResolution(e.target.value)}
-                    rows={7}
-                    placeholder="Root cause, the fix, and anything the requester should know…"
-                    aria-label="Resolution"
-                    className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-2.5 text-meta outline-none focus:border-accent"
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <Button onClick={() => void patch(selected.id, { resolution }, "resolution")} disabled={saving === "resolution"}>
-                      <Check size={12} /> Save resolution
-                    </Button>
-                    {selected.status !== "DONE" && (
-                      <Button variant="secondary" onClick={() => void closeTicket()} disabled={saving === "close"}>
-                        <AlertTriangle size={12} /> Resolve &amp; close
-                      </Button>
+                {tab === "activity" && (
+                  <div className="space-y-3">
+                    {comments.length === 0 && (
+                      <p className="text-caption text-[var(--muted)]">No notes yet. Anything you add here is kept with the ticket.</p>
                     )}
+                    {comments.map((c) => (
+                      <div key={c.id} className="rounded-lg border border-[var(--border)] p-3">
+                        <p className="text-[10px] font-semibold text-[var(--muted)]">
+                          {c.author?.name ?? "Someone"} · {formatDate(c.createdAt)}
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap text-meta">{c.body}</p>
+                      </div>
+                    ))}
+                    <div className="flex gap-2">
+                      <input
+                        value={comment}
+                        onChange={(e) => setComment(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && void addComment()}
+                        placeholder="Add an internal note…"
+                        aria-label="Add an internal note"
+                        className="h-9 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 text-meta outline-none focus:border-accent"
+                      />
+                      <Button onClick={() => void addComment()} disabled={saving === "comment" || !comment.trim()}>
+                        <MessageSquare size={12} /> Note
+                      </Button>
+                    </div>
                   </div>
-                  {selected.closedAt && (
-                    <p className="text-[10px] text-[var(--muted)]">Closed {formatDate(selected.closedAt)}</p>
-                  )}
-                </div>
+                )}
+
+                {tab === "resolution" && (
+                  <div className="space-y-3">
+                    <p className="text-caption text-[var(--muted)]">
+                      What we actually did. Kept separate from the description, which is what the requester said.
+                    </p>
+                    <textarea
+                      value={resolution}
+                      onChange={(e) => setResolution(e.target.value)}
+                      rows={8}
+                      placeholder="Root cause, the fix, and anything the requester should know…"
+                      aria-label="Resolution"
+                      className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-meta outline-none focus:border-accent"
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button onClick={() => void patch(selected.id, { resolution }, "resolution")} disabled={saving === "resolution"}>
+                        <Check size={12} /> Save resolution
+                      </Button>
+                      {selected.status !== "DONE" ? (
+                        <Button variant="secondary" onClick={() => void closeTicket()} disabled={saving === "close"}>
+                          <AlertTriangle size={12} /> Resolve &amp; close
+                        </Button>
+                      ) : (
+                        <Button variant="secondary" onClick={() => void patch(selected.id, { status: "IN_PROGRESS" }, "reopen")} disabled={saving === "reopen"}>
+                          Reopen ticket
+                        </Button>
+                      )}
+                      {selected.closedAt && <span className="text-[10px] text-[var(--muted)]">Closed {formatDate(selected.closedAt)}</span>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Properties, on the right edge like a service desk */}
+            <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+              <h2 className="border-b border-[var(--border)] px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
+                Properties
+              </h2>
+              <div className="min-h-0 flex-1 space-y-2.5 overflow-y-auto p-4">
+                {propRow("Priority", (
+                  <select value={selected.priority} disabled={saving === "priority"} onChange={(e) => void patch(selected.id, { priority: e.target.value }, "priority")} className={selectCls}>
+                    {PRIORITIES.map((x) => <option key={x} value={x}>{humanise(x)}</option>)}
+                  </select>
+                ))}
+                {propRow("Status", (
+                  <select value={selected.status} disabled={saving === "status"} onChange={(e) => void patch(selected.id, { status: e.target.value }, "status")} className={selectCls}>
+                    {["BACKLOG", ...STATUSES].map((x) => <option key={x} value={x}>{STATUS_LABEL[x] ?? x}</option>)}
+                  </select>
+                ))}
+                {propRow("Source", (
+                  <select value={selected.source ?? ""} disabled={saving === "source"} onChange={(e) => void patch(selected.id, { source: e.target.value || null }, "source")} className={selectCls}>
+                    <option value="">—</option>
+                    {SOURCES.map((x) => <option key={x} value={x}>{humanise(x)}</option>)}
+                  </select>
+                ))}
+                {propRow("Type", (
+                  <select value={selected.type ?? ""} disabled={saving === "type"} onChange={(e) => void patch(selected.id, { type: e.target.value || null }, "type")} className={selectCls}>
+                    <option value="">—</option>
+                    {TYPES.map((x) => <option key={x} value={x}>{humanise(x)}</option>)}
+                  </select>
+                ))}
+                {propRow("Group", (
+                  <input defaultValue={selected.groupName ?? ""} placeholder="e.g. ANZ_Wintel" onBlur={(e) => e.target.value !== (selected.groupName ?? "") && void patch(selected.id, { groupName: e.target.value || null }, "group")} className={inputCls} />
+                ))}
+                {propRow("Category", (
+                  <input defaultValue={selected.category ?? ""} placeholder="e.g. Cloud alarm" onBlur={(e) => e.target.value !== (selected.category ?? "") && void patch(selected.id, { category: e.target.value || null }, "category")} className={inputCls} />
+                ))}
+                {propRow("Agent", (
+                  <select
+                    value={selected.assignees?.find((a) => a.kind === "user")?.id ?? ""}
+                    disabled={saving === "assignee"}
+                    onChange={(e) => void patch(selected.id, { assigneeIds: e.target.value ? [e.target.value] : [] }, "assignee")}
+                    className={selectCls}
+                  >
+                    <option value="">Unassigned</option>
+                    {team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                ))}
+                {propRow("Kind", (
+                  <span className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-caption">
+                    <CircleDot size={11} className="text-[var(--muted)]" />
+                    {selected.kind ? selected.kind.toLowerCase() : "unclassified"}
+                  </span>
+                ))}
+              </div>
+            </aside>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* ---------------- The queue ---------------- */}
+          <header className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="font-display text-xl font-extrabold tracking-tight">Tickets</h1>
+              <p className="text-caption text-[var(--muted)]">
+                {openCount} open · {tickets.length} total · every task is a ticket, with a number, a requester and a resolution
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2.5">
+                <Search size={13} className="text-[var(--muted)]" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search tickets…"
+                  aria-label="Search tickets"
+                  className="w-44 bg-transparent text-meta outline-none placeholder:text-[var(--muted)]"
+                />
+              </label>
+              <div className="flex h-9 items-center rounded-lg border border-[var(--border)] p-0.5">
+                {(["open", "all", "closed"] as const).map((value) => (
+                  <button
+                    key={value}
+                    onClick={() => setStatusFilter(value)}
+                    aria-pressed={statusFilter === value}
+                    className={`h-8 rounded-md px-2.5 text-caption font-semibold capitalize transition ${
+                      statusFilter === value ? "bg-accent/10 text-accent" : "text-[var(--muted)] hover:bg-[var(--hover)]"
+                    }`}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </header>
+
+          {approvals > 0 && (
+            <div className="flex items-center gap-2 rounded-xl border border-amber-300/60 bg-amber-50/60 px-3 py-2 text-meta dark:border-amber-900/40 dark:bg-amber-950/20">
+              <ShieldCheck size={14} className="text-amber-600" />
+              <span className="font-semibold">{approvals} agent step{approvals === 1 ? "" : "s"} waiting for your approval</span>
+              <a href="/ai" className="ml-auto text-caption font-semibold text-accent underline decoration-dotted underline-offset-2">Review in the bot</a>
+            </div>
+          )}
+
+          <form onSubmit={addTicket} className="flex gap-2">
+            <input
+              value={quickAdd}
+              onChange={(e) => setQuickAdd(e.target.value)}
+              placeholder="New ticket… e.g. @tasks bug: invoice page crashes when saving"
+              aria-label="New ticket"
+              className="h-10 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm outline-none focus:border-accent"
+            />
+            <Button disabled={adding || !quickAdd.trim()}>
+              {adding ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Add ticket
+            </Button>
+          </form>
+
+          <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+            <div className="grid grid-cols-[1fr_140px_110px_90px_1fr] gap-3 border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
+              <span>Subject</span>
+              <span>Contact</span>
+              <span>Status</span>
+              <span>Priority</span>
+              <span>Assigned · created</span>
+            </div>
+            <div className="max-h-[calc(100vh-320px)] overflow-y-auto">
+              {loading ? (
+                <p className="px-3 py-8 text-center text-meta text-[var(--muted)]"><Loader2 size={14} className="mx-auto animate-spin" /></p>
+              ) : visible.length === 0 ? (
+                <p className="px-3 py-10 text-center text-meta text-[var(--muted)]">
+                  No tickets here yet. Add one above, or ask the bot in chat with <span className="font-semibold">@tasks</span>.
+                </p>
+              ) : (
+                visible.map((t) => {
+                  const owners = t.assignees ?? [];
+                  const contact = t.requesterName || t.creator?.name || "Unknown";
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => { setSelectedId(t.id); setTab("details"); }}
+                      className="grid w-full grid-cols-[1fr_140px_110px_90px_1fr] gap-3 border-b border-[var(--border)] px-3 py-2.5 text-left transition hover:bg-[var(--hover)]"
+                    >
+                      <span className="min-w-0">
+                        <span className={`block truncate text-meta font-semibold ${t.status === "DONE" ? "text-[var(--muted)]" : ""}`}>{t.title}</span>
+                        <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-[var(--muted)]">
+                          <span className="font-mono">{ticketRef(t.number)}</span>
+                          {t.type && <span>· {humanise(t.type)}</span>}
+                          {t.groupName && <span>· {t.groupName}</span>}
+                        </span>
+                      </span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-[9px] font-bold uppercase text-[var(--muted)]">
+                          {contact.slice(0, 1)}
+                        </span>
+                        <span className="truncate text-caption text-[var(--muted)]">{contact}</span>
+                      </span>
+                      <span>
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone(t.status)}`}>
+                          {STATUS_LABEL[t.status] ?? t.status}
+                        </span>
+                      </span>
+                      <span className="flex items-center gap-1.5 text-caption capitalize text-[var(--muted)]">
+                        <span className={`h-2 w-2 rounded-sm ${priorityDot(t.priority)}`} />
+                        {t.priority.toLowerCase()}
+                      </span>
+                      <span className="min-w-0 text-caption text-[var(--muted)]">
+                        <span className="block truncate">{owners.length ? owners.map((o) => o.name).join(", ") : "Unassigned"}</span>
+                        <span className="flex items-center gap-1 text-[10px]"><Clock size={9} /> {formatDate(t.createdAt)}</span>
+                      </span>
+                    </button>
+                  );
+                })
               )}
             </div>
-          </aside>
-        )}
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
