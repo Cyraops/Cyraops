@@ -217,21 +217,10 @@ button { cursor: pointer; }
   grid-template-columns: minmax(0, 1fr) 140px 110px 90px minmax(0, 1fr);
   gap: 0.75rem;
 }
-@media (max-width: 900px) {
-  /* On a phone the useful pair is what it is and whether it is open. */
-  .ticket-grid,
-  .ticket-grid-head {
-    grid-template-columns: minmax(0, 1fr) 96px;
-  }
-  .ticket-grid > :nth-child(2),
-  .ticket-grid > :nth-child(4),
-  .ticket-grid > :nth-child(5),
-  .ticket-grid-head > :nth-child(2),
-  .ticket-grid-head > :nth-child(4),
-  .ticket-grid-head > :nth-child(5) {
-    display: none;
-  }
-}
+/* Columns for the queue are set inline by the component (see ticket-desk.tsx),
+   which decides per-width what to render. Styling them here as well produced a
+   fight: an old nth-child rule hid the Status column on a phone because the
+   component no longer renders the cells it expected. */
 
 /* Open-ticket layout: conversation on the left, properties in a box on the
    right. Plain CSS for the same reason as .ticket-grid. */

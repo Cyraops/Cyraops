@@ -128,6 +128,7 @@ export function TicketDesk() {
   const [approvals, setApprovals] = useState<number>(0);
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [createOpen, setCreateOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const load = useCallback(async () => {
     const [list, people, pending, projects] = await Promise.all([
@@ -522,64 +523,6 @@ export function TicketDesk() {
             </div>
           </header>
 
-          {/* Filters: every property a ticket carries, because "which tickets" is
-              almost never just "open or closed". */}
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2">
-            <span className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
-              <Filter size={12} /> Filters
-            </span>
-            {([
-              ["status", "Status", ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"].map((v) => [v, STATUS_LABEL[v] ?? v])],
-              ["priority", "Priority", PRIORITIES.map((v) => [v, humanise(v)])],
-              ["source", "Source", SOURCES.map((v) => [v, humanise(v)])],
-              ["type", "Type", TYPES.map((v) => [v, humanise(v)])],
-              ["group", "Group", groups.map((v) => [v, v])],
-              [
-                "assignee",
-                "Agent",
-                [["unassigned", "Unassigned"], ...team.map((m) => [m.id, m.name] as [string, string])],
-              ],
-            ] as Array<[keyof typeof filters, string, Array<[string, string]>]>).map(([key, label, options]) => (
-              <select
-                key={key}
-                aria-label={`Filter by ${label}`}
-                value={filters[key] === "open" || filters[key] === "all" || filters[key] === "closed" ? "" : filters[key]}
-                onChange={(event) => setFilters((f) => ({ ...f, [key]: event.target.value }))}
-                className={`h-8 rounded-lg border px-2 text-caption outline-none transition focus:border-accent ${
-                  filters[key] && !["open", "all", "closed"].includes(filters[key])
-                    ? "border-accent/40 bg-accent/5 font-semibold text-accent"
-                    : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)]"
-                }`}
-              >
-                <option value="">All {label.toLowerCase()}</option>
-                {options.length === 0 && <option value="" disabled>No {label.toLowerCase()} values yet</option>}
-                {options.map(([value, text]) => (
-                  <option key={value} value={value}>{text}</option>
-                ))}
-              </select>
-            ))}
-            {activeFilters > 0 && (
-              <button
-                onClick={() => setFilters({ status: "open", priority: "", source: "", type: "", group: "", assignee: "" })}
-                className="flex h-8 items-center gap-1 rounded-lg px-2 text-caption font-semibold text-accent hover:bg-accent/5"
-              >
-                <X size={11} /> Clear {activeFilters}
-              </button>
-            )}
-            <span className="ml-auto text-caption text-[var(--muted)]">
-              {visible.length} of {tickets.length} shown
-            </span>
-          </div>
-
-
-          {approvals > 0 && (
-            <div className="flex items-center gap-2 rounded-xl border border-amber-300/60 bg-amber-50/60 px-3 py-2 text-meta dark:border-amber-900/40 dark:bg-amber-950/20">
-              <ShieldCheck size={14} className="text-amber-600" />
-              <span className="font-semibold">{approvals} agent step{approvals === 1 ? "" : "s"} waiting for your approval</span>
-              <a href="/ai" className="ml-auto text-caption font-semibold text-accent underline decoration-dotted underline-offset-2">Review in the bot</a>
-            </div>
-          )}
-
           <div className="flex items-center justify-between gap-3">
             <p className="text-caption text-[var(--muted)]">
               A ticket has a number, a requester and a resolution — create it here, or in chat with <span className="font-semibold">@tasks</span>.
@@ -590,13 +533,83 @@ export function TicketDesk() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-            <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px" : "minmax(0,1fr) 140px 110px 90px minmax(0,1fr)", gap: 12, alignItems: "center" }}
-              className="ticket-grid-head border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
+            <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px 32px" : "minmax(0,1fr) 140px 110px 90px minmax(0,1fr) 32px", gap: 12, alignItems: "center" }}
+              className="ticket-grid-head relative border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
               <span>Subject</span>
-              <span>Contact</span>
+              {!narrow && <span>Contact</span>}
               <span>Status</span>
-              <span>Priority</span>
-              <span>Assigned · created</span>
+              {!narrow && <span>Priority</span>}
+              {!narrow && <span>Assigned · created</span>}
+              <span className="flex justify-end">
+                <button
+                  onClick={() => setFiltersOpen((open) => !open)}
+                  aria-label="Filter tickets"
+                  aria-expanded={filtersOpen}
+                  title={activeFilters ? `${activeFilters} filter${activeFilters === 1 ? "" : "s"} active` : "Filter tickets"}
+                  className={`relative flex h-6 w-6 items-center justify-center rounded-md border transition ${
+                    activeFilters
+                      ? "border-accent/40 bg-accent/10 text-accent"
+                      : "border-transparent text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--text)]"
+                  }`}
+                >
+                  <Filter size={13} />
+                  {activeFilters > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-white">
+                      {activeFilters}
+                    </span>
+                  )}
+                </button>
+              </span>
+
+              {filtersOpen && (
+                <>
+                  <button className="fixed inset-0 z-20 cursor-default" aria-label="Close filters" onClick={() => setFiltersOpen(false)} />
+                  <div className="absolute right-2 top-full z-30 mt-1 w-[min(560px,calc(100vw-40px))] rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 text-left shadow-xl">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">Filter tickets</span>
+                      <span className="text-[10px] font-semibold normal-case text-[var(--muted)]">{visible.length} of {tickets.length} shown</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {([
+                        ["status", "Status", ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"].map((v) => [v, STATUS_LABEL[v] ?? v])],
+                        ["priority", "Priority", PRIORITIES.map((v) => [v, humanise(v)])],
+                        ["source", "Source", SOURCES.map((v) => [v, humanise(v)])],
+                        ["type", "Type", TYPES.map((v) => [v, humanise(v)])],
+                        ["group", "Group", groups.map((v) => [v, v])],
+                        ["assignee", "Agent", [["unassigned", "Unassigned"], ...team.map((m) => [m.id, m.name] as [string, string])]],
+                      ] as Array<[keyof typeof filters, string, Array<[string, string]>]>).map(([key, label, options]) => (
+                        <label key={key} className="block">
+                          <span className="mb-1 block text-[10px] font-semibold text-[var(--muted)]">{label}</span>
+                          <select
+                            aria-label={`Filter by ${label}`}
+                            value={["open", "all", "closed"].includes(filters[key]) ? "" : filters[key]}
+                            onChange={(event) => setFilters((f) => ({ ...f, [key]: event.target.value }))}
+                            className={`h-8 w-full rounded-lg border px-2 text-caption normal-case tracking-normal outline-none focus:border-accent ${
+                              filters[key] && !["open", "all", "closed"].includes(filters[key])
+                                ? "border-accent/40 bg-accent/5 font-semibold text-accent"
+                                : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text)]"
+                            }`}
+                          >
+                            <option value="">All {label.toLowerCase()}</option>
+                            {options.length === 0 && <option value="" disabled>none yet</option>}
+                            {options.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex items-center justify-end gap-2">
+                      <button
+                        onClick={() => setFilters({ status: "open", priority: "", source: "", type: "", group: "", assignee: "" })}
+                        disabled={activeFilters === 0}
+                        className="h-7 rounded-lg px-2 text-[11px] font-semibold text-accent disabled:opacity-40"
+                      >
+                        Clear all
+                      </button>
+                      <Button variant="secondary" className="h-7 px-2 text-[11px]" onClick={() => setFiltersOpen(false)}>Done</Button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
             <div className="max-h-[calc(100vh-320px)] overflow-y-auto">
               {loading ? (
@@ -613,7 +626,7 @@ export function TicketDesk() {
                     <button
                       key={t.id}
                       onClick={() => { setSelectedId(t.id); setTab("details"); }}
-                      style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px" : "minmax(0,1fr) 140px 110px 90px minmax(0,1fr)", gap: 12, alignItems: "center" }}
+                      style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px 32px" : "minmax(0,1fr) 140px 110px 90px minmax(0,1fr) 32px", gap: 12, alignItems: "center" }}
                       className="ticket-grid w-full border-b border-[var(--border)] px-3 py-2.5 text-left transition hover:bg-[var(--hover)]"
                     >
                       <span className="min-w-0">
@@ -649,6 +662,7 @@ export function TicketDesk() {
                           <span className="flex items-center gap-1 text-[10px]"><Clock size={9} /> {formatDate(t.createdAt)}</span>
                         </span>
                       )}
+                      <span aria-hidden />
                     </button>
                   );
                 })
