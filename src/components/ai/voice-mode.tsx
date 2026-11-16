@@ -409,13 +409,14 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
           personPulseAt={personPulseAt}
           speakPulseAt={speakPulseAt}
           onTap={onPlanetTap}
-          className="h-40 w-40"
+          className={turns.length > 0 ? "h-24 w-24" : "h-40 w-40"}
         />
         <p className="text-caption font-semibold text-[var(--muted)]">{label}</p>
       </div>
 
       {/* The conversation, readable and scrollable. */}
-      <div ref={scrollRef} className="soft-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-2">
+      <div className="relative min-h-0 flex-1">
+      <div ref={scrollRef} className="soft-scrollbar h-full overflow-y-auto overscroll-contain px-4 pb-2 pt-3">
         <div className="mx-auto max-w-3xl space-y-2">
           {turns.map((turn) => (
             <div key={turn.id} className={`flex ${turn.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -454,6 +455,13 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
             </p>
           )}
         </div>
+      </div>
+        {/* Fades the turn that is scrolling out, instead of cutting it in half. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-0 h-5"
+          style={{ background: "linear-gradient(to bottom, var(--surface-2), transparent)" }}
+        />
       </div>
 
       {/* Composer: type, attach, mute, end, send. */}
