@@ -8,6 +8,7 @@ import { Markdown } from "@/components/ai/markdown";
 import { parseToolSteps, ToolActivity, type ToolStep } from "@/components/ai/tool-activity";
 import { PagesBrowser, PagesPanel, type OpenPage, type PageMeta } from "@/components/ai/pages-panel";
 import { BrowserPanel } from "@/components/ai/browser-panel";
+import { VoiceMode } from "@/components/ai/voice-mode";
 import { CommandPalette } from "@/components/ai/command-palette";
 import { AskBlock, FileBlock, StepBlock, TextBlock, toBlocks } from "@/components/ai/blocks";
 import { BotOrb } from "@/components/ai/bot-avatar";
@@ -238,6 +239,7 @@ export function BotWorkspace() {
   const [botModal, setBotModal] = useState<{ mode: "create" | "edit"; agent?: any; template?: string } | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const [teammates, setTeammates] = useState<
     Array<{
       id?: string;
@@ -1082,7 +1084,11 @@ export function BotWorkspace() {
         {/* The team: your assistant plus every AI teammate, each with its own thread */}
         <div className="border-b border-[var(--border)] px-2 py-2">
           <button
-            onClick={() => selectAgent(null)}
+            onClick={() => {
+              // The assistant, spoken to: this row opens the voice conversation.
+              selectAgent(null);
+              setVoiceOpen(true);
+            }}
             className={`flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition ${
               activeAgent === null ? "bg-accent/10" : "hover:bg-[var(--hover)]"
             }`}
@@ -1177,6 +1183,20 @@ export function BotWorkspace() {
 
       {/* Centre — conversation */}
       <section className="flex min-h-0 flex-col">
+        {voiceOpen ? (
+          <VoiceMode
+            assistantId={assistantId || undefined}
+            conversationId={conversationId || undefined}
+            onConversation={(id) => setConversationId(id)}
+            onExit={() => setVoiceOpen(false)}
+            onApprovalRequired={() => {
+              // Voice cannot show an approval card; the chat can.
+              setVoiceOpen(false);
+              if (conversationId) void loadConversation(conversationId);
+            }}
+          />
+        ) : (
+          <>
         <header className="flex h-[52px] items-center justify-between border-b border-[var(--border)] px-4">
           <div className="flex min-w-0 items-center gap-2">
             <BotOrb size={30} working={busy} halo={busy} />
@@ -1590,6 +1610,8 @@ export function BotWorkspace() {
             )}
           </p>
         </div>
+        </>
+        )}
       </section>
 
       {/* Right rail — transparency */}
