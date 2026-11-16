@@ -243,7 +243,7 @@ export function TicketDesk() {
             {saving && <Loader2 size={13} className="animate-spin text-[var(--muted)]" />}
           </div>
 
-          <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="ticket-layout flex-1">
             {/* The conversation */}
             <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
               <header className="border-b border-[var(--border)] px-5 py-4">
@@ -349,7 +349,7 @@ export function TicketDesk() {
             </div>
 
             {/* Properties, on the right edge like a service desk */}
-            <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
+            <aside className="ticket-props">
               <h2 className="border-b border-[var(--border)] px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
                 Properties
               </h2>

@@ -232,3 +232,34 @@ button { cursor: pointer; }
     display: none;
   }
 }
+
+/* Open-ticket layout: conversation on the left, properties in a box on the
+   right. Plain CSS for the same reason as .ticket-grid. */
+.ticket-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  min-height: 0;
+}
+@media (min-width: 1024px) {
+  .ticket-layout {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    align-items: start;
+  }
+}
+.ticket-props {
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: var(--surface);
+}
+@media (min-width: 1024px) {
+  .ticket-props {
+    position: sticky;
+    top: 1rem;
+    max-height: calc(100vh - 8rem);
+    display: flex;
+    flex-direction: column;
+  }
+}
