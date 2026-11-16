@@ -542,6 +542,13 @@ export function BotWorkspace() {
       setMessages([]);
       setPendingAction(null);
       setConversationTitle(slug ? teammates.find((mate) => mate.slug === slug)?.name ?? "Teammate" : "New chat");
+      // Resume this teammate's last thread: there is no list to pick it from.
+      void (async () => {
+        const url = slug ? `/api/assistant/conversations?agent=${encodeURIComponent(slug)}` : "/api/assistant/conversations";
+        const data = await fetch(url).then((r) => r.json()).catch(() => ({}));
+        const latest = Array.isArray(data.conversations) ? data.conversations[0] : null;
+        if (latest?.id) await loadConversation(latest.id);
+      })();
     },
     [teammates]
   );
@@ -1153,117 +1160,9 @@ export function BotWorkspace() {
           </span>
         </div>
 
-        <div className="px-2 pb-1">
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search chats…"
-            aria-label="Search conversations"
-            className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-meta outline-none placeholder:text-[var(--muted)] focus:border-accent"
-          />
-          <button
-            onClick={() => setShowArchived((value) => !value)}
-            className="mt-1 w-full rounded-md px-1 py-0.5 text-left text-caption font-semibold text-[var(--muted)] transition hover:text-[var(--text)]"
-          >
-            {showArchived ? "← Back to chats" : "Show archived"}
-          </button>
-        </div>
-        <div className="soft-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
-          {visibleConversations.length === 0 ? (
-            <p className="px-2 py-4 text-center text-meta text-[var(--muted)]">No chats yet</p>
-          ) : (
-            <div className="space-y-0.5">
-              {visibleConversations.map((conversation) => (
-                <div
-                  key={conversation.id}
-                  className={`group flex w-full items-center gap-2 rounded-lg px-2.5 py-2 transition ${
-                    conversation.id === conversationId ? "bg-[#f0efff] dark:bg-[#302c4e]" : "hover:bg-[var(--hover)]"
-                  }`}
-                >
-                  <MessageSquare size={13} className="shrink-0 text-[var(--muted)]" />
-                  {renamingId === conversation.id ? (
-                    <input
-                      autoFocus
-                      value={renameDraft}
-                      onChange={(event) => setRenameDraft(event.target.value)}
-                      onBlur={() => void renameConversation(conversation.id, renameDraft)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") void renameConversation(conversation.id, renameDraft);
-                        if (event.key === "Escape") setRenamingId("");
-                      }}
-                      aria-label="Rename conversation"
-                      className="min-w-0 flex-1 rounded border border-accent bg-[var(--surface)] px-1 py-0.5 text-meta outline-none"
-                    />
-                  ) : (
-                    <button
-                      onClick={() => selectConversation(conversation.id)}
-                      onDoubleClick={() => {
-                        setRenamingId(conversation.id);
-                        setRenameDraft(conversation.title);
-                      }}
-                      className="min-w-0 flex-1 truncate text-left text-meta font-medium text-[var(--text)]"
-                      title="Double-click to rename"
-                    >
-                      {conversation.title}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => {
-                      setRenamingId(conversation.id);
-                      setRenameDraft(conversation.title);
-                    }}
-                    className="shrink-0 rounded p-0.5 text-[var(--muted)] opacity-0 transition hover:text-[var(--text)] focus:opacity-100 group-hover:opacity-100"
-                    aria-label={`Rename ${conversation.title}`}
-                  >
-                    <FileText size={11} />
-                  </button>
-                  <button
-                    onClick={() => void pinConversation(conversation.id, !(conversation as any).pinnedAt)}
-                    className={`shrink-0 rounded p-0.5 transition hover:text-accent focus:opacity-100 group-hover:opacity-100 ${
-                      (conversation as any).pinnedAt ? "text-accent opacity-100" : "text-[var(--muted)] opacity-0"
-                    }`}
-                    aria-label={`${(conversation as any).pinnedAt ? "Unpin" : "Pin"} ${conversation.title}`}
-                  >
-                    <Sparkles size={11} />
-                  </button>
-                  <button
-                    onClick={() => void archiveConversation(conversation.id, !showArchived)}
-                    className="shrink-0 rounded p-0.5 text-[var(--muted)] opacity-0 transition hover:text-[var(--text)] focus:opacity-100 group-hover:opacity-100"
-                    aria-label={`Archive ${conversation.title}`}
-                  >
-                    <Clock size={11} />
-                  </button>
-                  <button
-                    onClick={() => void deleteConversation(conversation.id)}
-                    className="shrink-0 rounded p-0.5 text-[var(--muted)] opacity-0 transition hover:text-rose-600 focus:opacity-100 group-hover:opacity-100"
-                    aria-label={`Delete ${conversation.title}`}
-                  >
-                    <Trash2 size={11} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* The chat list is gone on purpose: one thread per teammate, resumed
+            automatically, so there is nothing here to browse or tidy. */}
 
-        {spaces.length > 0 && (
-          <div className="border-t border-[var(--border)] p-2">
-            <p className="px-2 pb-1 pt-1 text-caption font-bold uppercase tracking-widest text-[var(--muted)]">Spaces</p>
-            <div className="space-y-0.5">
-              {spaces.map((space) => (
-                <button
-                  key={space.id}
-                  onClick={() => router.push(`/chat?conversation=${space.id}`)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition hover:bg-[var(--hover)]"
-                  title="Open in team chat — @assistant to loop in your bot"
-                >
-                  <Users size={13} className="shrink-0 text-[var(--muted)]" />
-                  <span className="min-w-0 flex-1 truncate text-meta font-medium text-[var(--text)]">{space.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </aside>
 
       {/* Centre — conversation */}
