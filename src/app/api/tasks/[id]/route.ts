@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { logActivity, publicUserSelect, sameOrigin, userFromRequest } from "@/lib/auth";
-import { jsonError, prioritySchema, taskKindSchema, taskStatusSchema } from "@/lib/validators";
+import { jsonError, prioritySchema, taskKindSchema, taskSourceSchema, taskStatusSchema, taskTypeSchema } from "@/lib/validators";
 import { listTaskAssignees, newlyAssigned, normaliseAssigneeSet, setTaskAssignees } from "@/lib/tasks/assignees";
 import { delegateAgentWork } from "@/lib/tasks/delegate";
 
@@ -13,6 +13,14 @@ const updateSchema = z.object({ title: z.string().trim().min(1).max(180).optiona
   agentSlugs: z.array(z.string()).optional(),
   projectId: z.string().optional(),
   archive: z.boolean().optional(),
+  // Ticket properties
+  source: taskSourceSchema.optional(),
+  type: taskTypeSchema.optional(),
+  groupName: z.string().trim().max(80).optional().nullable(),
+  category: z.string().trim().max(80).optional().nullable(),
+  requesterName: z.string().trim().max(120).optional().nullable(),
+  requesterEmail: z.string().trim().email().max(200).optional().nullable().or(z.literal("")),
+  resolution: z.string().max(10000).optional(),
 });
 async function accessible(id: string, userId: string, role: string) {
   const task = await db.task.findUnique({ where: { id } });
@@ -38,13 +46,15 @@ export async function PATCH(request: NextRequest, context: Context) {
   const parsed = updateSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return jsonError("Check the task details", 400);
   const { archive, dueDate, assigneeIds, agentSlugs, ...fields } = parsed.data;
-  const existingTask = await db.task.findUnique({ where: { id }, select: { parentId: true, projectId: true, assigneeId: true, subtasks: { where: { archivedAt: null }, select: { id: true } } } });
+  const existingTask = await db.task.findUnique({ where: { id }, select: { parentId: true, projectId: true, assigneeId: true, closedAt: true, subtasks: { where: { archivedAt: null }, select: { id: true } } } });
   if (existingTask?.parentId && fields.projectId !== undefined && fields.projectId !== existingTask.projectId) return jsonError("A subtask must stay in its parent task's project", 400);
   if (existingTask?.subtasks.length && fields.projectId !== undefined && fields.projectId !== existingTask.projectId) return jsonError("Move or archive this task's subtasks before changing its project", 400);
   const projectId = fields.projectId ?? existingTask?.projectId;
   if (fields.projectId && !await db.project.findFirst({ where: { id: fields.projectId, ...(user.role === "OWNER" || user.role === "ADMIN" ? {} : { members: { some: { userId: user.id } } }) }, select: { id: true } })) return jsonError("Project not found", 404);
   if (fields.assigneeId && projectId && !await db.user.findFirst({ where: { id: fields.assigneeId, disabledAt: null, OR: [{ role: { in: ["OWNER", "ADMIN"] } }, { projectMemberships: { some: { projectId } } }] }, select: { id: true } })) return jsonError("Assignee must belong to this project", 400);
-  const updated = await db.task.update({ where: { id }, data: { ...fields, ...(dueDate !== undefined ? { dueDate: dueDate ? new Date(dueDate) : null } : {}), ...(archive !== undefined ? { archivedAt: archive ? new Date() : null } : {}) }, include: { assignee: { select: publicUserSelect }, creator: { select: publicUserSelect }, project: { select: { id: true, name: true } }, _count: { select: { comments: true } } } });
+  // Closing a ticket records when it closed; reopening clears the timestamp.
+  const statusPatch = fields.status === "DONE" && !existingTask?.closedAt ? { closedAt: new Date() } : fields.status && fields.status !== "DONE" ? { closedAt: null } : {};
+  const updated = await db.task.update({ where: { id }, data: { ...fields, ...statusPatch, ...(fields.requesterEmail === "" ? { requesterEmail: null } : {}), ...(dueDate !== undefined ? { dueDate: dueDate ? new Date(dueDate) : null } : {}), ...(archive !== undefined ? { archivedAt: archive ? new Date() : null } : {}) }, include: { assignee: { select: publicUserSelect }, creator: { select: publicUserSelect }, project: { select: { id: true, name: true } }, _count: { select: { comments: true } } } });
   // Notify only on an actual reassignment. Comparing to the creator both
   // spammed the assignee on every re-save and skipped a legitimate hand-off to
   // the creator themselves.

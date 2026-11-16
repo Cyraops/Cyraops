@@ -1,10 +1,10 @@
-import { TasksBoard } from "@/components/modules/tasks-board";
+import { TicketDesk } from "@/components/modules/ticket-desk";
 
 export const metadata = {
-  title: "Tasks | Cyraops CRM",
-  description: "Every ticket in one place: what exists, who owns it, and what needs a decision.",
+  title: "Tickets | Cyraops CRM",
+  description: "Every ticket in one place: what came in, who owns it, and how it was resolved.",
 };
 
 export default function TasksPage() {
-  return <TasksBoard />;
+  return <TicketDesk />;
 }

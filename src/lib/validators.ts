@@ -7,6 +7,9 @@ export const taskStatusSchema = z.enum(["BACKLOG", "TODO", "IN_PROGRESS", "IN_RE
 export const prioritySchema = z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]);
 /** BUG = something broken, SERVICE = agreed work, CATEGORY = grouping item. */
 export const taskKindSchema = z.enum(["BUG", "SERVICE", "CATEGORY"]);
+/** Service-desk properties, so a task can be worked as a ticket. */
+export const taskSourceSchema = z.enum(["EMAIL", "PHONE", "CHAT", "WEB", "PORTAL", "API"]);
+export const taskTypeSchema = z.enum(["SERVICE_REQUEST", "INCIDENT", "PROBLEM", "CHANGE"]);
 export const projectStatusSchema = z.enum(["PLANNING", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"]);
 
 export function jsonError(message: string, status = 400) {

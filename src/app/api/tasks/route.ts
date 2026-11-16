@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { logActivity, publicUserSelect, sameOrigin, userFromRequest } from "@/lib/auth";
-import { jsonError, prioritySchema, taskKindSchema, taskStatusSchema } from "@/lib/validators";
+import { jsonError, prioritySchema, taskKindSchema, taskSourceSchema, taskStatusSchema, taskTypeSchema } from "@/lib/validators";
 import { listTaskAssignees, normaliseAssigneeSet, setTaskAssignees, validateHumanAssignees } from "@/lib/tasks/assignees";
 import { delegateAgentWork } from "@/lib/tasks/delegate";
 
@@ -11,6 +11,14 @@ const createSchema = z.object({ title: z.string().trim().min(1).max(180), descri
   assigneeIds: z.array(z.string()).optional(),
   agentSlugs: z.array(z.string()).optional(),
   parentId: z.string().optional().nullable(),
+  // Ticket properties
+  source: taskSourceSchema.optional(),
+  type: taskTypeSchema.optional(),
+  groupName: z.string().trim().max(80).optional().nullable(),
+  category: z.string().trim().max(80).optional().nullable(),
+  requesterName: z.string().trim().max(120).optional().nullable(),
+  requesterEmail: z.string().trim().email().max(200).optional().nullable().or(z.literal("")),
+  resolution: z.string().max(10000).optional(),
 });
 export async function GET(request: NextRequest) {
   const user = await userFromRequest(request);
@@ -74,7 +82,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const task = await db.task.create({ data: { title: data.title, description: data.description ?? "", status: data.status, priority: data.priority, kind: data.kind ?? null, dueDate: data.dueDate ? new Date(data.dueDate) : null, projectId, assigneeId: owners.userIds[0] ?? null, parentId: data.parentId ?? null, creatorId: user.id }, include: { assignee: { select: publicUserSelect }, project: { select: { id: true, name: true } } } });
+  const task = await db.task.create({ data: { title: data.title, description: data.description ?? "", status: data.status, priority: data.priority, kind: data.kind ?? null, source: data.source ?? null, type: data.type ?? null, groupName: data.groupName ?? null, category: data.category ?? null, requesterName: data.requesterName ?? null, requesterEmail: data.requesterEmail || null, resolution: data.resolution ?? "", dueDate: data.dueDate ? new Date(data.dueDate) : null, projectId, assigneeId: owners.userIds[0] ?? null, parentId: data.parentId ?? null, creatorId: user.id }, include: { assignee: { select: publicUserSelect }, project: { select: { id: true, name: true } } } });
   await setTaskAssignees(task.id, owners);
 
   for (const assigneeId of owners.userIds) {

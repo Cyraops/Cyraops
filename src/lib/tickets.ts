@@ -254,6 +254,8 @@ export async function createTicketFromInstruction(params: {
       creatorId: params.actor.id,
       assigneeId: owners.userIds[0] ?? null,
       kind: params.kind ?? inferTicketKind(params.text),
+      source: "CHAT",
+      type: "SERVICE_REQUEST",
     },
     select: { id: true, title: true },
   });

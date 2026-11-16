@@ -13,7 +13,7 @@ const nav: NavItem[] = [
   { label: "CRM", href: "/crm", icon: Target },
   { label: "Cyraops Bot", href: "/ai", icon: Sparkles },
   // Tickets created in the bot (or on the board) are tracked here.
-  { label: "Tasks", href: "/tasks", icon: ListChecks },
+  { label: "Tickets", href: "/tasks", icon: ListChecks },
   { label: "Projects", href: "/projects", icon: FolderKanban },
   // Agent runs and approvals deliberately have no nav entry of their own: they
   // live inside the Cyraops Bot, which is where work with agents starts.
