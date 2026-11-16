@@ -40,20 +40,6 @@ interface Conversation {
   updatedAt: string;
 }
 
-const TOOL_LABELS: Array<{ id: string; label: string }> = [
-  { id: "search_leads", label: "Leads" },
-  { id: "search_deals", label: "Deals" },
-  { id: "search_contacts", label: "Contacts" },
-  { id: "search_companies", label: "Companies" },
-  { id: "search_tasks", label: "Tasks" },
-  { id: "get_sales_report", label: "Sales report" },
-  { id: "get_pipeline_report", label: "Pipeline report" },
-  { id: "generate_management_report", label: "Management report" },
-  { id: "search_documents", label: "Documents" },
-  { id: "summarize_thread", label: "Email threads" },
-];
-
-
 /** Create a bot from blank or from a template, and edit a bot you own. */
 function BotDialog({
   mode,
@@ -1746,16 +1732,8 @@ export function BotWorkspace() {
           </div>
         )}
 
-        <p className="mb-2 mt-6 flex items-center gap-1.5 text-caption font-bold uppercase tracking-widest text-[var(--muted)]">
-          <Wrench size={12} /> What it can see
-        </p>
-        <div className="flex flex-wrap gap-1.5">
-          {TOOL_LABELS.map((tool) => (
-            <span key={tool.id} className="rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-0.5 text-caption text-[var(--muted)]">
-              {tool.label}
-            </span>
-          ))}
-        </div>
+        {/* "What it can see" was a frozen list that never matched the selected
+            agent's tools, so it is gone rather than kept as decoration. */}
         <button
           onClick={() => setApprovalsOpen((open) => !open)}
           aria-expanded={approvalsOpen}
