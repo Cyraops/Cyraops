@@ -165,17 +165,13 @@ export function VoiceEarth({ phase, personPulseAt, speakPulseAt, onTap, classNam
       moon.rotation.y = -orbitAngle + Math.PI; // one face always to Earth
 
       /**
-       * Frame the pair, not the planet.
+       * Earth stays dead centre; the Moon orbits around it.
        *
-       * Centering the canvas on Earth leaves the Moon hanging off one side, so
-       * the pair reads as off-centre for half of every orbit. Shifting the
-       * camera by half the Moon's offset keeps the Earth-and-Moon cluster in the
-       * middle, and lets Earth drift gently as the Moon swings.
+       * Framing the pair instead moved Earth off-centre whenever the Moon was on
+       * the right, which read worse than the Moon being off to one side.
        */
-      moon.getWorldPosition(moonWorld);
-      const clusterX = moonWorld.x * 0.5;
       const pointerX = (pointerRef.current.x - 0.5) * 0.4;
-      camera.position.x += (clusterX + pointerX - camera.position.x) * Math.min(1, dt * 1.6);
+      camera.position.x += (pointerX - camera.position.x) * Math.min(1, dt * 2);
       const pointerY = (pointerRef.current.y - 0.5) * 0.3;
       camera.position.y += (0.7 + pointerY - camera.position.y) * Math.min(1, dt * 2.5);
       camera.lookAt(0, 0, 0);
