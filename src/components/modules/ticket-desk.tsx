@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { Button, useToast } from "@/components/ui";
+import { Button, Field, Modal, Select, Textarea, useToast } from "@/components/ui";
 
 /**
  * The ticket desk.
@@ -111,19 +111,22 @@ export function TicketDesk() {
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState<string>("");
   const [resolution, setResolution] = useState("");
-  const [quickAdd, setQuickAdd] = useState("");
   const [adding, setAdding] = useState(false);
   const [team, setTeam] = useState<Array<{ id: string; name: string }>>([]);
   const [approvals, setApprovals] = useState<number>(0);
+  const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const load = useCallback(async () => {
-    const [list, people, pending] = await Promise.all([
+    const [list, people, pending, projects] = await Promise.all([
       fetch("/api/tickets?limit=60").then((r) => (r.ok ? r.json() : { tickets: [] })).catch(() => ({ tickets: [] })),
       fetch("/api/team").then((r) => (r.ok ? r.json() : { members: [] })).catch(() => ({ members: [] })),
       fetch("/api/ai/approvals").then((r) => (r.ok ? r.json() : { approvals: [] })).catch(() => ({ approvals: [] })),
+      fetch("/api/projects").then((r) => (r.ok ? r.json() : { projects: [] })).catch(() => ({ projects: [] })),
     ]);
     setTickets(list.tickets ?? []);
     setTeam(people.members ?? []);
+    setProjects(projects.projects ?? []);
     setApprovals((pending.approvals ?? []).length);
     setLoading(false);
   }, []);
@@ -176,28 +179,48 @@ export function TicketDesk() {
     }
   };
 
-  const addTicket = async (event: React.FormEvent<HTMLFormElement>) => {
+  const createTicket = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const text = quickAdd.trim();
-    if (!text) {
-      // A disabled button looks broken: say what is missing instead.
-      toast("Type what the ticket is about first", "error");
+    const form = event.currentTarget;
+    const f = new FormData(form);
+    const subject = String(f.get("subject") ?? "").trim();
+    if (!subject) {
+      toast("Give the ticket a subject", "error");
+      return;
+    }
+    const projectId = String(f.get("projectId") ?? "");
+    if (!projectId) {
+      toast("Choose a project for the ticket", "error");
       return;
     }
     setAdding(true);
     try {
-      // The same @tasks path the bot uses, so chat and desk cannot diverge.
-      const res = await fetch("/api/tickets", {
+      const assigneeId = String(f.get("assigneeId") ?? "");
+      const response = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.startsWith("@tasks") ? text : `@tasks ${text}` }),
+        body: JSON.stringify({
+          title: subject,
+          description: String(f.get("description") ?? ""),
+          projectId,
+          priority: f.get("priority") || undefined,
+          status: f.get("status") || undefined,
+          source: f.get("source") || undefined,
+          type: f.get("type") || undefined,
+          groupName: f.get("groupName") || null,
+          category: f.get("category") || null,
+          requesterName: f.get("requesterName") || null,
+          requesterEmail: f.get("requesterEmail") || null,
+          assigneeIds: assigneeId ? [assigneeId] : [],
+        }),
       });
-      const data = await res.json();
-      if (!res.ok || data.ok === false) throw new Error(data.message || data.error || "Could not create the ticket");
-      setQuickAdd("");
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not create the ticket");
+      setCreateOpen(false);
+      form.reset();
       await load();
-      if (data.ticket?.id) setSelectedId(data.ticket.id);
-      toast("Ticket created");
+      if (data.task?.id) setSelectedId(data.task.id);
+      toast(`Ticket ${data.task?.number ? `#SR-${data.task.number}` : ""} created`.trim());
     } catch (error) {
       toast(error instanceof Error ? error.message : "Could not create the ticket", "error");
     } finally {
@@ -481,18 +504,14 @@ export function TicketDesk() {
             </div>
           )}
 
-          <form onSubmit={addTicket} className="flex gap-2">
-            <input
-              value={quickAdd}
-              onChange={(e) => setQuickAdd(e.target.value)}
-              placeholder="New ticket… e.g. @tasks bug: invoice page crashes when saving"
-              aria-label="New ticket"
-              className="h-10 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm outline-none focus:border-accent"
-            />
-            <Button type="submit" disabled={adding}>
-              {adding ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Add ticket
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-caption text-[var(--muted)]">
+              A ticket has a number, a requester and a resolution — create it here, or in chat with <span className="font-semibold">@tasks</span>.
+            </p>
+            <Button onClick={() => setCreateOpen(true)}>
+              <Plus size={13} /> New ticket
             </Button>
-          </form>
+          </div>
 
           <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
             <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px" : "minmax(0,1fr) 140px 110px 90px minmax(0,1fr)", gap: 12, alignItems: "center" }}
@@ -562,6 +581,63 @@ export function TicketDesk() {
           </div>
         </>
       )}
+
+      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="New ticket" size="max-w-2xl">
+        <form onSubmit={createTicket} className="space-y-3">
+          <Field label="Subject" name="subject" required autoFocus maxLength={180} placeholder="What is this about?" />
+          <Textarea label="Description" name="description" rows={3} maxLength={10000} placeholder="What the requester reported…" />
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select label="Project" name="projectId" required defaultValue={projects[0]?.id ?? ""}>
+              {projects.length === 0 && <option value="">No projects yet</option>}
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>{project.name}</option>
+              ))}
+            </Select>
+            <Select label="Agent" name="assigneeId" defaultValue="">
+              <option value="">Unassigned</option>
+              {team.map((member) => (
+                <option key={member.id} value={member.id}>{member.name}</option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Requester name" name="requesterName" maxLength={120} placeholder="e.g. cis-alarm" />
+            <Field label="Requester email" name="requesterEmail" type="email" maxLength={200} placeholder="requester@company.com" />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select label="Source" name="source" defaultValue="PORTAL">
+              {SOURCES.map((source) => <option key={source} value={source}>{humanise(source)}</option>)}
+            </Select>
+            <Select label="Type" name="type" defaultValue="SERVICE_REQUEST">
+              {TYPES.map((type) => <option key={type} value={type}>{humanise(type)}</option>)}
+            </Select>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Group" name="groupName" maxLength={80} placeholder="e.g. ANZ_Wintel" />
+            <Field label="Category" name="category" maxLength={80} placeholder="e.g. Cloud alarm" />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Select label="Priority" name="priority" defaultValue="MEDIUM">
+              {PRIORITIES.map((priority) => <option key={priority} value={priority}>{humanise(priority)}</option>)}
+            </Select>
+            <Select label="Status" name="status" defaultValue="TODO">
+              {["BACKLOG", ...STATUSES].map((status) => <option key={status} value={status}>{STATUS_LABEL[status] ?? status}</option>)}
+            </Select>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="secondary" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={adding}>
+              {adding ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />} Create ticket
+            </Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
