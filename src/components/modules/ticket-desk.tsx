@@ -83,8 +83,24 @@ const ticketRef = (n: number) => `#SR-${n}`;
 const formatDate = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleString(undefined, { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
 
+
+/** Width breakpoints for the two layouts. Inline styles are used rather than
+ *  classes because a cached stylesheet silently kept the queue stacked. */
+function useNarrow(query = "(max-width: 900px)") {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const update = () => setNarrow(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, [query]);
+  return narrow;
+}
+
 export function TicketDesk() {
   const toast = useToast();
+  const narrow = useNarrow();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -243,7 +259,10 @@ export function TicketDesk() {
             {saving && <Loader2 size={13} className="animate-spin text-[var(--muted)]" />}
           </div>
 
-          <div className="ticket-layout flex-1">
+          <div
+            className="ticket-layout flex-1"
+            style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr)" : "minmax(0,1fr) 320px", gap: 16, alignItems: "start" }}
+          >
             {/* The conversation */}
             <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
               <header className="border-b border-[var(--border)] px-5 py-4">
@@ -349,7 +368,16 @@ export function TicketDesk() {
             </div>
 
             {/* Properties, on the right edge like a service desk */}
-            <aside className="ticket-props">
+            <aside
+              className="ticket-props"
+              style={{
+                border: "1px solid var(--border)",
+                borderRadius: 12,
+                background: "var(--surface)",
+                overflow: "hidden",
+                ...(narrow ? {} : { position: "sticky", top: 16, maxHeight: "calc(100vh - 8rem)" }),
+              }}
+            >
               <h2 className="border-b border-[var(--border)] px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
                 Properties
               </h2>
@@ -463,7 +491,8 @@ export function TicketDesk() {
           </form>
 
           <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-            <div className="ticket-grid-head border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
+            <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px" : "minmax(0,1fr) 140px 110px 90px minmax(0,1fr)", gap: 12, alignItems: "center" }}
+              className="ticket-grid-head border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
               <span>Subject</span>
               <span>Contact</span>
               <span>Status</span>
@@ -485,6 +514,7 @@ export function TicketDesk() {
                     <button
                       key={t.id}
                       onClick={() => { setSelectedId(t.id); setTab("details"); }}
+                      style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px" : "minmax(0,1fr) 140px 110px 90px minmax(0,1fr)", gap: 12, alignItems: "center" }}
                       className="ticket-grid w-full border-b border-[var(--border)] px-3 py-2.5 text-left transition hover:bg-[var(--hover)]"
                     >
                       <span className="min-w-0">
@@ -495,25 +525,31 @@ export function TicketDesk() {
                           {t.groupName && <span>· {t.groupName}</span>}
                         </span>
                       </span>
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-[9px] font-bold uppercase text-[var(--muted)]">
-                          {contact.slice(0, 1)}
+                      {!narrow && (
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--surface-2)] text-[9px] font-bold uppercase text-[var(--muted)]">
+                            {contact.slice(0, 1)}
+                          </span>
+                          <span className="truncate text-caption text-[var(--muted)]">{contact}</span>
                         </span>
-                        <span className="truncate text-caption text-[var(--muted)]">{contact}</span>
-                      </span>
+                      )}
                       <span>
                         <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone(t.status)}`}>
                           {STATUS_LABEL[t.status] ?? t.status}
                         </span>
                       </span>
-                      <span className="flex items-center gap-1.5 text-caption capitalize text-[var(--muted)]">
-                        <span className={`h-2 w-2 rounded-sm ${priorityDot(t.priority)}`} />
-                        {t.priority.toLowerCase()}
-                      </span>
-                      <span className="min-w-0 text-caption text-[var(--muted)]">
-                        <span className="block truncate">{owners.length ? owners.map((o) => o.name).join(", ") : "Unassigned"}</span>
-                        <span className="flex items-center gap-1 text-[10px]"><Clock size={9} /> {formatDate(t.createdAt)}</span>
-                      </span>
+                      {!narrow && (
+                        <span className="flex items-center gap-1.5 text-caption capitalize text-[var(--muted)]">
+                          <span className={`h-2 w-2 rounded-sm ${priorityDot(t.priority)}`} />
+                          {t.priority.toLowerCase()}
+                        </span>
+                      )}
+                      {!narrow && (
+                        <span className="min-w-0 text-caption text-[var(--muted)]">
+                          <span className="block truncate">{owners.length ? owners.map((o) => o.name).join(", ") : "Unassigned"}</span>
+                          <span className="flex items-center gap-1 text-[10px]"><Clock size={9} /> {formatDate(t.createdAt)}</span>
+                        </span>
+                      )}
                     </button>
                   );
                 })
