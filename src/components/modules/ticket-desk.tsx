@@ -7,6 +7,7 @@ import {
   Filter,
   Check,
   ChevronRight,
+  ChevronDown,
   CircleDot,
   Clock,
   Loader2,
@@ -572,13 +573,14 @@ export function TicketDesk() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
-            <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px 32px" : "minmax(0,1fr) 140px 110px 90px minmax(0,1fr) 32px", gap: 12, alignItems: "center" }}
+            <div style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px 32px" : "minmax(0,1fr) 150px 110px 90px 160px 150px 32px", gap: 12, alignItems: "center" }}
               className="ticket-grid-head relative border-b border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">
               <span>Subject</span>
               {!narrow && <span>Contact</span>}
               <span>Status</span>
               {!narrow && <span>Priority</span>}
-              {!narrow && <span>Assignee · created</span>}
+              {!narrow && <span>Assignee</span>}
+              {!narrow && <span>Created</span>}
               <span className="flex justify-end">
                 <button
                   onClick={() => setFiltersOpen((open) => !open)}
@@ -674,7 +676,7 @@ export function TicketDesk() {
                           setTab("details");
                         }
                       }}
-                      style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px 32px" : "minmax(0,1fr) 140px 110px 90px minmax(0,1fr) 32px", gap: 12, alignItems: "center" }}
+                      style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px 32px" : "minmax(0,1fr) 150px 110px 90px 160px 150px 32px", gap: 12, alignItems: "center" }}
                       className="ticket-grid w-full cursor-pointer border-b border-[var(--border)] px-3 py-2.5 text-left transition hover:bg-[var(--hover)]"
                     >
                       <span className="min-w-0">
@@ -705,7 +707,7 @@ export function TicketDesk() {
                         </span>
                       )}
                       {!narrow && (
-                        <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="relative flex min-w-0 items-center">
                           <select
                             value={owners.find((o) => o.kind === "user")?.id ?? ""}
                             disabled={savingAssignee === t.id}
@@ -714,7 +716,7 @@ export function TicketDesk() {
                             onChange={(event) => void assignTicket(t.id, event.target.value)}
                             aria-label={`Assignee for ${t.title}`}
                             title="Change the assignee"
-                            className={`-ml-1 h-6 w-full max-w-[calc(100%-4px)] cursor-pointer truncate rounded-md border border-transparent bg-transparent px-1 text-caption outline-none transition hover:border-[var(--border)] hover:bg-[var(--surface-2)] focus:border-accent ${
+                            className={`h-7 w-full cursor-pointer appearance-none truncate rounded-md border border-transparent bg-transparent pl-1 pr-5 text-caption outline-none transition hover:border-[var(--border)] hover:bg-[var(--surface-2)] focus:border-accent ${
                               owners.length ? "text-[var(--text)]" : "text-[var(--muted)]"
                             }`}
                           >
@@ -723,9 +725,12 @@ export function TicketDesk() {
                               <option key={member.id} value={member.id}>{teamLabels.get(member.id) ?? member.name}</option>
                             ))}
                           </select>
-                          <span className="flex items-center gap-1 text-[10px] text-[var(--muted)]">
-                            <Clock size={9} /> {formatDate(t.createdAt)}
-                          </span>
+                          <ChevronDown size={11} className="pointer-events-none absolute right-1 text-[var(--muted)]" />
+                        </span>
+                      )}
+                      {!narrow && (
+                        <span className="flex items-center gap-1.5 text-caption text-[var(--muted)]">
+                          <Clock size={10} /> {formatDate(t.createdAt)}
                         </span>
                       )}
                       <span aria-hidden />
