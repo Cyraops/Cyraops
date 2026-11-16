@@ -400,23 +400,24 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
             : "Tap the planet to talk";
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* The planet: still the target you tap to start, smaller now that the
-          conversation has to fit under it. */}
-      <div className="flex shrink-0 flex-col items-center gap-1 pb-1 pt-1">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      {/* The planet floats over the conversation: the chat keeps the full pane
+          and simply passes behind the Earth and the Moon. */}
+      <div className="pointer-events-none absolute inset-x-0 top-2 z-10 flex flex-col items-center gap-1">
         <VoiceEarth
           phase={phase as EarthPhase}
           personPulseAt={personPulseAt}
           speakPulseAt={speakPulseAt}
           onTap={onPlanetTap}
-          className={turns.length > 0 ? "h-24 w-24" : "h-40 w-40"}
+          className="pointer-events-auto h-40 w-40 drop-shadow-[0_18px_40px_rgba(30,30,80,0.22)]"
         />
-        <p className="text-caption font-semibold text-[var(--muted)]">{label}</p>
+        <p className="rounded-full bg-[var(--surface)]/85 px-2 py-0.5 text-caption font-semibold text-[var(--muted)] backdrop-blur-sm">
+          {label}
+        </p>
       </div>
 
       {/* The conversation, readable and scrollable. */}
-      <div className="relative min-h-0 flex-1">
-      <div ref={scrollRef} className="soft-scrollbar h-full overflow-y-auto overscroll-contain px-4 pb-2 pt-3">
+      <div ref={scrollRef} className="soft-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-2 pt-44">
         <div className="mx-auto max-w-3xl space-y-2">
           {turns.map((turn) => (
             <div key={turn.id} className={`flex ${turn.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -455,13 +456,6 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
             </p>
           )}
         </div>
-      </div>
-        {/* Fades the turn that is scrolling out, instead of cutting it in half. */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-5"
-          style={{ background: "linear-gradient(to bottom, var(--surface-2), transparent)" }}
-        />
       </div>
 
       {/* Composer: type, attach, mute, end, send. */}
