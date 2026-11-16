@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bot, Check, ChevronDown, Clock, Copy, CornerDownLeft, FileText, Globe, MessageSquare, Mic, MicOff, Paperclip, Plus, RefreshCw, Sparkles, Square, Trash2, Users, Volume2, VolumeX, Wrench, X } from "lucide-react";
+import { Bot, Check, ChevronDown, Loader2, Clock, Copy, CornerDownLeft, FileText, Globe, MessageSquare, Mic, MicOff, Paperclip, Plus, RefreshCw, Sparkles, Square, Trash2, Users, Volume2, VolumeX, Wrench, X } from "lucide-react";
 import { RoutinesModal } from "@/components/routines/routines-modal";
 import { Markdown } from "@/components/ai/markdown";
 import { parseToolSteps, ToolActivity, type ToolStep } from "@/components/ai/tool-activity";
@@ -11,6 +11,7 @@ import { BrowserPanel } from "@/components/ai/browser-panel";
 import { CommandPalette } from "@/components/ai/command-palette";
 import { AskBlock, FileBlock, StepBlock, TextBlock, toBlocks } from "@/components/ai/blocks";
 import { BotOrb } from "@/components/ai/bot-avatar";
+import { Button, Field, Modal, Textarea, useToast } from "@/components/ui";
 
 interface ChatItem {
   id: string;
@@ -52,8 +53,177 @@ const TOOL_LABELS: Array<{ id: string; label: string }> = [
   { id: "summarize_thread", label: "Email threads" },
 ];
 
+
+/** Create a bot from blank or from a template, and edit a bot you own. */
+function BotDialog({
+  mode,
+  agent,
+  template,
+  teammates,
+  onClose,
+  onSaved,
+}: {
+  mode: "create" | "edit";
+  agent?: any;
+  template?: string;
+  teammates: Array<any>;
+  onClose: () => void;
+  onSaved: (message: string) => void;
+}) {
+  const toast = useToast();
+  const templates = teammates.filter((mate) => mate.isTemplate);
+  const [chosen, setChosen] = useState<string>(template ?? "");
+  const [tools, setTools] = useState<string[]>(agent?.tools ?? []);
+  const [busy, setBusy] = useState(false);
+
+  const abilities: Array<[string, string]> = [
+    ["search_contacts", "Find contacts"], ["search_companies", "Find companies"],
+    ["search_leads", "Find leads"], ["create_lead", "Create leads"], ["update_lead", "Update leads"],
+    ["search_deals", "Find deals"], ["create_deal", "Create deals"], ["update_deal", "Update deals"],
+    ["search_tasks", "Find tickets"], ["create_task", "Create tickets"], ["update_task", "Triage tickets"],
+    ["send_email", "Send email"], ["search_emails", "Search the mailbox"],
+    ["list_schedule", "Read the schedule"], ["create_event", "Book meetings"],
+    ["create_page", "Build documents"], ["analyse_table", "Analyse spreadsheets"],
+    ["browser_navigate", "Browse the web"], ["browser_extract", "Read web pages"],
+    ["create_routine", "Create routines"], ["remember", "Remember facts"],
+    ["create_contact", "Create contacts"], ["qualify_lead", "Qualify leads"],
+  ];
+
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const f = new FormData(event.currentTarget);
+    const name = String(f.get("name") ?? "").trim();
+    const role = String(f.get("role") ?? "").trim();
+    if (!name || !role) return toast("A bot needs a name and a role", "error");
+    setBusy(true);
+    try {
+      const payload: Record<string, unknown> = {
+        name,
+        role,
+        description: String(f.get("description") ?? ""),
+        systemPrompt: String(f.get("instructions") ?? ""),
+        tools,
+      };
+      const response = await fetch(
+        mode === "create" ? "/api/ai/agents" : `/api/ai/agents/${agent.id}`,
+        {
+          method: mode === "create" ? "POST" : "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(mode === "create" ? { ...payload, templateSlug: chosen || undefined } : payload),
+        }
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not save the bot");
+      onSaved(mode === "create" ? `${name} is on the team` : `${name} updated`);
+      onClose();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not save the bot", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const retire = async () => {
+    if (!agent) return;
+    setBusy(true);
+    try {
+      const response = await fetch(`/api/ai/agents/${agent.id}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Could not retire the bot");
+      onSaved(data.deleted ? `${agent.name} was retired` : `${agent.name} was paused`);
+      onClose();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not retire the bot", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={mode === "create" ? "New bot" : `Edit ${agent?.name ?? "bot"}`} size="max-w-2xl">
+      <form onSubmit={submit} className="space-y-3">
+        {mode === "create" && templates.length > 0 && (
+          <div>
+            <span className="mb-1 block text-xs font-semibold text-[var(--muted)]">Start from</span>
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                onClick={() => setChosen("")}
+                className={`rounded-lg border px-2.5 py-1.5 text-caption font-semibold transition ${chosen === "" ? "border-accent bg-accent/10 text-accent" : "border-[var(--border)] text-[var(--muted)] hover:bg-[var(--hover)]"}`}
+              >
+                Blank bot
+              </button>
+              {templates.map((mate) => (
+                <button
+                  key={mate.slug}
+                  type="button"
+                  onClick={() => {
+                    setChosen(mate.slug);
+                    setTools(Array.isArray(mate.tools) ? mate.tools : []);
+                  }}
+                  title={mate.role}
+                  className={`rounded-lg border px-2.5 py-1.5 text-caption font-semibold transition ${chosen === mate.slug ? "border-accent bg-accent/10 text-accent" : "border-[var(--border)] text-[var(--muted)] hover:bg-[var(--hover)]"}`}
+                >
+                  {mate.name.replace(/ Agent$/, "")}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1 text-[10px] text-[var(--muted)]">
+              A template fills in the wording and abilities. Your copy is independent — edit it freely.
+            </p>
+          </div>
+        )}
+
+        <Field label="Name" name="name" required maxLength={80} defaultValue={agent?.name ?? ""} placeholder="e.g. Alarm Triage" autoFocus />
+        <Field label="Role" name="role" required maxLength={120} defaultValue={agent?.role ?? ""} placeholder="What this bot is responsible for" />
+        <Field label="Short description" name="description" maxLength={300} defaultValue={agent?.description ?? ""} placeholder="One line shown under the name" />
+        <Textarea label="Standing instructions" name="instructions" rows={5} maxLength={8000} defaultValue={agent?.instructions ?? ""} placeholder="How this bot should behave on every task" />
+
+        <div>
+          <span className="mb-1 block text-xs font-semibold text-[var(--muted)]">Abilities ({tools.length} chosen)</span>
+          <div className="max-h-44 overflow-y-auto rounded-lg border border-[var(--border)] p-2">
+            <div className="grid grid-cols-2 gap-1">
+              {abilities.map(([id, label]) => (
+                <label key={id} className="flex cursor-pointer items-center gap-1.5 text-[11px]">
+                  <input
+                    type="checkbox"
+                    checked={tools.includes(id)}
+                    onChange={(event) =>
+                      setTools((current) => (event.target.checked ? [...current, id] : current.filter((tool) => tool !== id)))
+                    }
+                  />
+                  <span className="truncate">{label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <p className="mt-1 text-[10px] text-[var(--muted)]">
+            Anything irreversible still asks for approval, whoever holds it.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 pt-1">
+          {mode === "edit" ? (
+            <button type="button" onClick={() => void retire()} disabled={busy} className="text-caption font-semibold text-rose-600 hover:underline disabled:opacity-40">
+              Retire this bot
+            </button>
+          ) : <span />}
+          <span className="flex items-center gap-2">
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+              {mode === "create" ? "Create bot" : "Save"}
+            </Button>
+          </span>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 export function BotWorkspace() {
   const router = useRouter();
+  const toast = useToast();
   const [spaces, setSpaces] = useState<Array<{ id: string; label: string }>>([]);
   const [assistantId, setAssistantId] = useState("");
   const [assistantName, setAssistantName] = useState("Cyraops Assistant");
@@ -86,8 +256,19 @@ export function BotWorkspace() {
   const [dragging, setDragging] = useState(false);
   /** Null = the personal assistant. Otherwise the AI teammate being talked to. */
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
+  const [botModal, setBotModal] = useState<{ mode: "create" | "edit"; agent?: any; template?: string } | null>(null);
   const [teammates, setTeammates] = useState<
-    Array<{ slug: string; name: string; role: string; description: string; status?: string }>
+    Array<{
+      id?: string;
+      slug: string;
+      name: string;
+      role: string;
+      description: string;
+      status?: string;
+      isTemplate?: boolean;
+      instructions?: string;
+      tools?: string[];
+    }>
   >([]);
   const [brief, setBrief] = useState<{
     user: { name: string | null; role: string };
@@ -252,11 +433,17 @@ export function BotWorkspace() {
         agents
           .filter((agent: any) => agent?.slug && agent.slug !== "chief_of_staff")
           .map((agent: any) => ({
+            id: agent.id as string,
             slug: agent.slug,
             name: agent.name,
             role: agent.role ?? "",
             description: agent.description ?? "",
             status: agent.status,
+            isTemplate: Boolean(agent.isTemplate),
+            instructions: (agent.systemPrompt ?? "") as string,
+            tools: (() => {
+              try { return JSON.parse(agent.tools ?? "[]") as string[]; } catch { return []; }
+            })(),
           }))
       );
     } catch {
@@ -909,8 +1096,8 @@ export function BotWorkspace() {
               </p>
               <div className="mt-1 space-y-0.5">
                 {teammates.map((mate) => (
+                  <span key={mate.slug} className="group/row relative flex items-center">
                   <button
-                    key={mate.slug}
                     onClick={() => selectAgent(mate.slug)}
                     className={`flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition ${
                       activeAgent === mate.slug ? "bg-accent/10" : "hover:bg-[var(--hover)]"
@@ -925,13 +1112,36 @@ export function BotWorkspace() {
                         }`}
                       />
                     </span>
-                    <span className="min-w-0">
+                    <span className="min-w-0 flex-1">
                       <span className="block truncate text-meta font-medium text-[var(--text)]">{mate.name}</span>
-                      <span className="block truncate text-[10px] text-[var(--muted)]">{mate.role}</span>
+                      <span className="block truncate text-[10px] text-[var(--muted)]">
+                        {mate.role}
+                        {mate.isTemplate && <span className="ml-1 rounded bg-[var(--surface-2)] px-1 text-[9px] font-semibold uppercase tracking-wide">template</span>}
+                      </span>
                     </span>
                   </button>
+                  {!mate.isTemplate && (
+                    <button
+                      onClick={(event) => { event.stopPropagation(); setBotModal({ mode: "edit", agent: mate }); }}
+                      aria-label={`Edit ${mate.name}`}
+                      title="Edit this bot"
+                      className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--muted)] opacity-0 transition hover:bg-[var(--hover)] hover:text-accent focus:opacity-100 group-hover/row:opacity-100"
+                    >
+                      <Wrench size={10} />
+                    </button>
+                  )}
+                  </span>
                 ))}
               </div>
+              <button
+                onClick={() => setBotModal({ mode: "create" })}
+                className="mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-[var(--border)] px-1.5 py-1.5 text-left text-[11px] font-semibold text-[var(--muted)] transition hover:border-accent/40 hover:text-accent"
+              >
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--surface-2)]">
+                  <Plus size={11} />
+                </span>
+                New bot
+              </button>
             </>
           )}
         </div>
@@ -1687,6 +1897,20 @@ export function BotWorkspace() {
       )}
 
       {browserOpen && !openPage && <BrowserPanel onClose={() => setBrowserOpen(false)} />}
+
+      {botModal && (
+        <BotDialog
+          mode={botModal.mode}
+          agent={botModal.agent}
+          template={botModal.template}
+          teammates={teammates}
+          onClose={() => setBotModal(null)}
+          onSaved={(message) => {
+            toast(message);
+            void loadTeammates();
+          }}
+        />
+      )}
 
       <CommandPalette
         open={paletteOpen}

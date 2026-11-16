@@ -871,6 +871,9 @@ model AiAgent {
   maxTokens     Int              @default(4096)
   status        String           @default("ACTIVE")
   isMaster      Boolean          @default(false)
+  /// A shipped starting point. Templates can be cloned but not edited or
+  /// deleted, so everyone's "start from Sales Agent" stays the same.
+  isTemplate    Boolean          @default(false)
   version       String           @default("1.0.0")
   tools         String           @default("[]")
   permissions   String           @default("[]")
