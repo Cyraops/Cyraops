@@ -1023,17 +1023,6 @@ export function BotWorkspace() {
 
   // Prompts chosen from what is actually true, so the first screen is about
   // this business rather than a generic demo.
-  const SUGGESTIONS: string[] = (() => {
-    if (!brief) return ["What needs my attention today?"];
-    const out: string[] = [];
-    if (brief.pipeline.stalled > 0) out.push("Which deals are stalling, and what should I do about them?");
-    if (brief.work.overdue > 0) out.push("What is overdue and what should I do first?");
-    if (brief.leads.goingCold > 0) out.push("Which leads have gone quiet and how should I re-open them?");
-    if (brief.pipeline.deals > 0) out.push("Build me a pipeline dashboard I can share");
-    if (out.length < 2) out.push("Draft a follow-up for my quietest deal");
-    return out.slice(0, 4);
-  })();
-
   return (
     <div className="relative grid h-[calc(100dvh-62px-2rem)] w-full grid-cols-1 md:grid-cols-[240px_minmax(0,1fr)] sm:h-[calc(100dvh-62px-3.5rem)] xl:grid-cols-[240px_minmax(0,1fr)_260px]" /* main carries p-4 / p-7, so the page must subtract it or the whole grid overflows the viewport and the composer sits below the fold */>
       {/* Left rail — conversations */}
@@ -1249,147 +1238,22 @@ export function BotWorkspace() {
           {loading ? (
             <div className="flex h-full items-center justify-center text-xs text-[var(--muted)]">Loading…</div>
           ) : messages.length === 0 ? (
-            <div className="cy-rise mx-auto flex h-full w-full max-w-[560px] flex-col justify-center gap-4">
-              <div>
-                <BotOrb size={44} halo />
-                <h2 className="mt-3 font-display text-[24px] font-extrabold leading-tight tracking-tight text-[var(--text)]">
-                  {brief?.user?.name ? `Hello, ${brief.user.name}.` : "What are we working on?"}
-                </h2>
-                <p className="mt-1 text-meta leading-relaxed text-[var(--muted)]">
-                  {brief?.isEmpty
-                    ? "Nothing in the CRM yet. Tell me about the business and I'll remember it, or ask me to add your first lead."
-                    : `I can see your live CRM — ${brief?.assistant?.name ?? "your assistant"}, running on ${brief?.assistant?.model ?? "your model"}. Here is what stands out:`}
-                </p>
-              </div>
-
-              {brief && !brief.isEmpty && (
-                <div className="grid gap-2">
-                  <button
-                    onClick={() => setInput("Where does my pipeline stand, and which deals are stalling?")}
-                    className="group flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-left shadow-[var(--shadow-1)] transition hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[var(--shadow-2)]"
-                  >
-                    <span className="min-w-0">
-                      <span className="block text-caption font-bold uppercase tracking-wide text-[var(--muted)]">
-                        Pipeline
-                      </span>
-                      <span className="block truncate text-[13px] font-semibold text-[var(--text)]">
-                        {brief.pipeline.deals} open deal{brief.pipeline.deals === 1 ? "" : "s"}
-                        {brief.pipeline.value > 0 ? ` · ${shortMoney(brief.pipeline.value)}` : ""}
-                      </span>
-                    </span>
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-caption font-bold ${
-                        brief.pipeline.stalled > 0
-                          ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
-                          : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                      }`}
-                    >
-                      {brief.pipeline.stalled > 0 ? `${brief.pipeline.stalled} stalled` : "all moving"}
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => setInput("What is overdue or due today, and what should I do first?")}
-                    className="group flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-left shadow-[var(--shadow-1)] transition hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[var(--shadow-2)]"
-                  >
-                    <span className="min-w-0">
-                      <span className="block text-caption font-bold uppercase tracking-wide text-[var(--muted)]">
-                        My work
-                      </span>
-                      <span className="block truncate text-[13px] font-semibold text-[var(--text)]">
-                        {brief.work.nextTask ?? "Nothing due today"}
-                      </span>
-                    </span>
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-caption font-bold ${
-                        brief.work.overdue > 0
-                          ? "bg-rose-500/15 text-rose-700 dark:text-rose-400"
-                          : "bg-[var(--surface-2)] text-[var(--muted)]"
-                      }`}
-                    >
-                      {brief.work.overdue > 0
-                        ? `${brief.work.overdue} overdue`
-                        : `${brief.work.dueToday} due`}
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => setInput("Which leads have gone quiet, and what should I send them?")}
-                    className="group flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-left shadow-[var(--shadow-1)] transition hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[var(--shadow-2)]"
-                  >
-                    <span className="min-w-0">
-                      <span className="block text-caption font-bold uppercase tracking-wide text-[var(--muted)]">
-                        Leads
-                      </span>
-                      <span className="block truncate text-[13px] font-semibold text-[var(--text)]">
-                        {brief.leads.goingCold > 0
-                          ? `${brief.leads.goingCold} gone quiet for 2+ weeks`
-                          : "No leads need a nudge"}
-                      </span>
-                    </span>
-                    <CornerDownLeft size={12} className="shrink-0 text-[var(--muted)] opacity-0 transition group-hover:opacity-100" />
-                  </button>
-                </div>
-              )}
-
-              <div className="grid w-full gap-2 sm:grid-cols-2">
-                {SUGGESTIONS.map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    onClick={() => setInput(suggestion)}
-                    className="group flex items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-left text-meta font-medium text-[var(--text-2)] shadow-[var(--shadow-1)] transition duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:text-accent hover:shadow-[var(--shadow-2)]"
-                  >
-                    <span className="min-w-0 truncate">{suggestion}</span>
-                    <CornerDownLeft size={12} className="shrink-0 opacity-0 transition group-hover:opacity-100" />
-                  </button>
-                ))}
-              </div>
-
-              {brief?.goals?.length ? (
-                <div className="rounded-xl border border-accent/30 bg-accent/5 px-3 py-2">
-                  <p className="flex items-center gap-1.5 text-caption font-bold uppercase tracking-wide text-accent">
-                    <Users size={10} /> Team working
-                  </p>
-                  <div className="mt-1 space-y-0.5">
-                    {brief.goals.map((goal) => (
-                      <button
-                        key={goal.id}
-                        onClick={() => router.push(`/ai/team?goal=${goal.id}`)}
-                        className="flex w-full items-center justify-between gap-2 text-left"
-                      >
-                        <span className="min-w-0 truncate text-meta font-medium text-[var(--text)]">{goal.title}</span>
-                        <span className="shrink-0 text-caption text-[var(--muted)]">
-                          {goal.status.toLowerCase()} · r{goal.round}/{goal.maxRounds}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {(brief?.pages?.length || brief?.routines?.length) && (
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-caption text-[var(--muted)]">
-                  {brief?.pages?.slice(0, 2).map((page) => (
-                    <button
-                      key={page.id}
-                      onClick={() => void showPage(page.id)}
-                      className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1 font-medium transition hover:border-accent/50 hover:text-accent"
-                    >
-                      <FileText size={10} /> {page.title}
-                    </button>
-                  ))}
-                  {brief?.routines?.length ? (
-                    <button
-                      onClick={() => setRoutinesOpen(true)}
-                      className="flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1 font-medium transition hover:border-accent/50 hover:text-accent"
-                    >
-                      <Clock size={10} /> {brief.routines.length} routine
-                      {brief.routines.length === 1 ? "" : "s"} scheduled
-                    </button>
-                  ) : null}
-                  <span className="opacity-70">⌘K to search · / for commands</span>
-                </div>
-              )}
+            <div className="cy-rise mx-auto flex h-full w-full max-w-[560px] flex-col justify-center gap-3">
+              <BotOrb size={44} halo />
+              <h2 className="font-display text-[24px] font-extrabold leading-tight tracking-tight text-[var(--text)]">
+                {brief?.user?.name ? `Hello, ${brief.user.name}.` : "What are we working on?"}
+              </h2>
+              <p className="text-meta leading-relaxed text-[var(--text-2)]">
+                I&apos;m your assistant, and I already know my way around your CRM — no need to explain the
+                business twice.
+              </p>
+              <p className="text-meta leading-relaxed text-[var(--muted)]">
+                Tell me what you want in your own words: <em>&ldquo;what&rsquo;s due this week?&rdquo;</em>,{" "}
+                <em>&ldquo;triage ticket #SR-7&rdquo;</em>, <em>&ldquo;find that invoice email&rdquo;</em>,{" "}
+                <em>&ldquo;book a call Thursday at 3&rdquo;</em>, <em>&ldquo;send Adil the update&rdquo;</em>.
+                Tickets, leads, mail, meetings, documents — I&rsquo;ll handle the boring parts and ask before I
+                change anything.
+              </p>
             </div>
           ) : (
             <div className="mx-auto max-w-3xl space-y-3">
