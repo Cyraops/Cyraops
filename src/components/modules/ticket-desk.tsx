@@ -122,9 +122,10 @@ export function TicketDesk() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState<string>("");
+  const [savingAssignee, setSavingAssignee] = useState<string>("");
   const [resolution, setResolution] = useState("");
   const [adding, setAdding] = useState(false);
-  const [team, setTeam] = useState<Array<{ id: string; name: string }>>([]);
+  const [team, setTeam] = useState<Array<{ id: string; name: string; email?: string | null }>>([]);
   const [approvals, setApprovals] = useState<number>(0);
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -161,6 +162,18 @@ export function TicketDesk() {
   }, [selected?.id, selected?.resolution]);
 
   /** Groups that actually exist in the queue, so the filter never offers a dead option. */
+  /** Display labels that disambiguate when two people share a name. */
+  const teamLabels = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const m of team) counts.set(m.name, (counts.get(m.name) ?? 0) + 1);
+    return new Map(
+      team.map((m) => [
+        m.id,
+        (counts.get(m.name) ?? 0) > 1 && m.email ? `${m.name} · ${m.email}` : m.name,
+      ])
+    );
+  }, [team]);
+
   const groups = useMemo(
     () => [...new Set(tickets.map((t) => t.groupName).filter(Boolean) as string[])].sort(),
     [tickets]
@@ -272,6 +285,32 @@ export function TicketDesk() {
       toast(error instanceof Error ? error.message : "Could not add the note", "error");
     } finally {
       setSaving("");
+    }
+  };
+
+  /** Assign from the queue: one request, one row updated, no page reload. */
+  const assignTicket = async (ticketId: string, userId: string) => {
+    setSavingAssignee(ticketId);
+    try {
+      const response = await fetch(`/api/tasks/${ticketId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assigneeIds: userId ? [userId] : [] }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not change the assignee");
+      const next = (data.task?.assignees ?? []).map((a: { kind: string; id: string; name: string }) => a);
+      setTickets((prev) =>
+        prev.map((t) =>
+          t.id === ticketId
+            ? { ...t, assignees: next.length ? next : userId ? [{ kind: "user", id: userId, name: team.find((m) => m.id === userId)?.name ?? "Assigned" }] : [] }
+            : t
+        )
+      );
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not change the assignee", "error");
+    } finally {
+      setSavingAssignee("");
     }
   };
 
@@ -472,7 +511,7 @@ export function TicketDesk() {
                     className={selectCls}
                   >
                     <option value="">Unassigned</option>
-                    {team.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    {team.map((m) => <option key={m.id} value={m.id}>{teamLabels.get(m.id) ?? m.name}</option>)}
                   </select>
                 ))}
                 {propRow("Kind", (
@@ -539,7 +578,7 @@ export function TicketDesk() {
               {!narrow && <span>Contact</span>}
               <span>Status</span>
               {!narrow && <span>Priority</span>}
-              {!narrow && <span>Assigned · created</span>}
+              {!narrow && <span>Assignee · created</span>}
               <span className="flex justify-end">
                 <button
                   onClick={() => setFiltersOpen((open) => !open)}
@@ -576,7 +615,7 @@ export function TicketDesk() {
                         ["source", "Source", SOURCES.map((v) => [v, humanise(v)])],
                         ["type", "Type", TYPES.map((v) => [v, humanise(v)])],
                         ["group", "Group", groups.map((v) => [v, v])],
-                        ["assignee", "Agent", [["unassigned", "Unassigned"], ...team.map((m) => [m.id, m.name] as [string, string])]],
+                        ["assignee", "Agent", [["unassigned", "Unassigned"], ...team.map((m) => [m.id, teamLabels.get(m.id) ?? m.name] as [string, string])]],
                       ] as Array<[keyof typeof filters, string, Array<[string, string]>]>).map(([key, label, options]) => (
                         <label key={key} className="block">
                           <span className="mb-1 block text-[10px] font-semibold text-[var(--muted)]">{label}</span>
@@ -623,11 +662,20 @@ export function TicketDesk() {
                   const owners = t.assignees ?? [];
                   const contact = t.requesterName || t.creator?.name || "Unknown";
                   return (
-                    <button
+                    <div
                       key={t.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => { setSelectedId(t.id); setTab("details"); }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedId(t.id);
+                          setTab("details");
+                        }
+                      }}
                       style={{ display: "grid", gridTemplateColumns: narrow ? "minmax(0,1fr) 96px 32px" : "minmax(0,1fr) 140px 110px 90px minmax(0,1fr) 32px", gap: 12, alignItems: "center" }}
-                      className="ticket-grid w-full border-b border-[var(--border)] px-3 py-2.5 text-left transition hover:bg-[var(--hover)]"
+                      className="ticket-grid w-full cursor-pointer border-b border-[var(--border)] px-3 py-2.5 text-left transition hover:bg-[var(--hover)]"
                     >
                       <span className="min-w-0">
                         <span className={`block truncate text-meta font-semibold ${t.status === "DONE" ? "text-[var(--muted)]" : ""}`}>{t.title}</span>
@@ -657,13 +705,31 @@ export function TicketDesk() {
                         </span>
                       )}
                       {!narrow && (
-                        <span className="min-w-0 text-caption text-[var(--muted)]">
-                          <span className="block truncate">{owners.length ? owners.map((o) => o.name).join(", ") : "Unassigned"}</span>
-                          <span className="flex items-center gap-1 text-[10px]"><Clock size={9} /> {formatDate(t.createdAt)}</span>
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <select
+                            value={owners.find((o) => o.kind === "user")?.id ?? ""}
+                            disabled={savingAssignee === t.id}
+                            onClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => event.stopPropagation()}
+                            onChange={(event) => void assignTicket(t.id, event.target.value)}
+                            aria-label={`Assignee for ${t.title}`}
+                            title="Change the assignee"
+                            className={`-ml-1 h-6 w-full max-w-[calc(100%-4px)] cursor-pointer truncate rounded-md border border-transparent bg-transparent px-1 text-caption outline-none transition hover:border-[var(--border)] hover:bg-[var(--surface-2)] focus:border-accent ${
+                              owners.length ? "text-[var(--text)]" : "text-[var(--muted)]"
+                            }`}
+                          >
+                            <option value="">Unassigned</option>
+                            {team.map((member) => (
+                              <option key={member.id} value={member.id}>{teamLabels.get(member.id) ?? member.name}</option>
+                            ))}
+                          </select>
+                          <span className="flex items-center gap-1 text-[10px] text-[var(--muted)]">
+                            <Clock size={9} /> {formatDate(t.createdAt)}
+                          </span>
                         </span>
                       )}
                       <span aria-hidden />
-                    </button>
+                    </div>
                   );
                 })
               )}
