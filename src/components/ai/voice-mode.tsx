@@ -255,25 +255,27 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     [assistantId, listen, onApprovalRequired, onConversation, setPhaseSafe, speak, stopRecognition]
   );
 
-  // Ask for the microphone once, then start the loop.
+  /** Explicit start: permission is requested by a tap, never on arrival. */
+  const start = useCallback(async () => {
+    setError("");
+    try {
+      const stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
+      stream?.getTracks().forEach((track) => track.stop());
+    } catch (caught) {
+      const name = (caught as DOMException)?.name ?? "";
+      setError(
+        name === "NotAllowedError"
+          ? "Microphone is blocked. Allow it for this site, then tap the orb again."
+          : "No microphone was found. Connect one and try again."
+      );
+      setPhaseSafe("error");
+      return;
+    }
+    listen();
+  }, [listen, setPhaseSafe]);
+
   useEffect(() => {
     activeRef.current = true;
-    void (async () => {
-      try {
-        const stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
-        stream?.getTracks().forEach((track) => track.stop());
-        listen();
-      } catch (caught) {
-        const name = (caught as DOMException)?.name ?? "";
-        setError(
-          name === "NotAllowedError"
-            ? "Microphone is blocked. Allow it for this site, then open voice again."
-            : "No microphone was found. Connect one and try again."
-        );
-        setPhaseSafe("error");
-      }
-    })();
-
     return () => {
       activeRef.current = false;
       stopRecognition();
@@ -290,10 +292,14 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
         : phase === "speaking"
           ? "Speaking — tap the orb to interrupt"
           : phase === "error"
-            ? "Voice paused"
-            : "Starting…";
+            ? "Voice paused — tap the orb to retry"
+            : "Tap the orb and talk";
 
   const interrupt = () => {
+    if (phaseRef.current === "idle") {
+      void start();
+      return;
+    }
     if (phaseRef.current === "speaking") {
       window.speechSynthesis?.cancel();
       listen();
@@ -301,8 +307,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       stopRecognition();
       setPhaseSafe("idle");
     } else {
-      setError("");
-      listen();
+      void start();
     }
   };
 

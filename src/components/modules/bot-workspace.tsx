@@ -1096,7 +1096,9 @@ export function BotWorkspace() {
             <BotOrb size={24} />
             <span className="min-w-0">
               <span className="block truncate text-meta font-bold text-[var(--text)]">{assistantName}</span>
-              <span className="block truncate text-caption text-[var(--muted)]">Personal · remembers you</span>
+              <span className="flex items-center gap-1 truncate text-caption text-[var(--muted)]">
+                <Mic size={9} /> Voice assistant · tap to talk
+              </span>
             </span>
           </button>
 
