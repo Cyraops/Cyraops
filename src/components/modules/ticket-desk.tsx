@@ -156,7 +156,7 @@ export function TicketDesk() {
     setResolution(selected?.resolution ?? "");
     setComment("");
     if (!selected) return;
-    fetch(`/api/tasks/${selected.id}/comments`)
+    fetch(`/api/tickets/${selected.id}/comments`)
       .then((r) => (r.ok ? r.json() : { comments: [] }))
       .then((d) => setComments(d.comments ?? []))
       .catch(() => setComments([]));
@@ -203,7 +203,7 @@ export function TicketDesk() {
   const patch = async (id: string, body: Record<string, unknown>, field: string) => {
     setSaving(field);
     try {
-      const res = await fetch(`/api/tasks/${id}`, {
+      const res = await fetch(`/api/tickets/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -273,7 +273,7 @@ export function TicketDesk() {
     if (!selected || !comment.trim()) return;
     setSaving("comment");
     try {
-      const res = await fetch(`/api/tasks/${selected.id}/comments`, {
+      const res = await fetch(`/api/tickets/${selected.id}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: comment.trim() }),
@@ -293,7 +293,7 @@ export function TicketDesk() {
   const assignTicket = async (ticketId: string, userId: string) => {
     setSavingAssignee(ticketId);
     try {
-      const response = await fetch(`/api/tasks/${ticketId}`, {
+      const response = await fetch(`/api/tickets/${ticketId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ assigneeIds: userId ? [userId] : [] }),
