@@ -126,11 +126,80 @@ export function renderKit(html: string): string {
     return `<span class="cy-pill cy-tone-${tone}">${body}</span>`;
   });
 
+  // A figure with an optional caption. Only ordinary http(s) sources; anything
+  // else is dropped rather than rendered as a broken or dangerous image.
+  output = output.replace(/<cy-figure\b([^>]*)\/?>/gi, (_match, raw: string) => {
+    const src = attr(raw, "src");
+    if (!/^https?:\/\//i.test(src)) return "";
+    const alt = attr(raw, "alt");
+    const caption = attr(raw, "caption");
+    return `<figure class="cy-figure"><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy" />${
+      caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : ""
+    }</figure>`;
+  });
+
+  output = output.replace(/<cy-code\b([^>]*)>([\s\S]*?)<\/cy-code>/gi, (_match, raw: string, body: string) => {
+    const language = attr(raw, "lang");
+    return `<pre class="cy-code"${language ? ` data-lang="${escapeHtml(language)}"` : ""}><code>${escapeHtml(
+      body.replace(/<[^>]+>/g, "")
+    )}</code></pre>`;
+  });
+
+  return output;
+}
+
+export interface TocEntry { level: number; text: string; id: string }
+
+/**
+ * Document-level pass: give headings stable ids, then fill any <cy-toc/> with a
+ * contents list built from them. Rendering a table of contents needs the whole
+ * document, which a per-tag replacement cannot see.
+ */
+export function renderDocument(html: string): string {
+  let output = renderKit(html);
+
+  const entries: TocEntry[] = [];
+  output = output.replace(/<h([23])([^>]*)>([\s\S]*?)<\/h\1>/gi, (match, level: string, attrs: string, body: string) => {
+    const text = body.replace(/<[^>]+>/g, "").trim();
+    if (!text) return match;
+    const existing = /id="([^"]+)"/i.exec(attrs)?.[1];
+    const generated =
+      text
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "")
+        .slice(0, 60) || `section-${entries.length + 1}`;
+    const id = existing ?? generated;
+    entries.push({ level: Number(level), text, id });
+    return existing ? match : `<h${level}${attrs} id="${id}">${body}</h${level}>`;
+  });
+
+  if (/<cy-toc\b[^>]*\/?>/i.test(output) && entries.length > 0) {
+    const items = entries
+      .map((e) => `<li class="cy-toc-l${e.level}"><a href="#${e.id}">${escapeHtml(e.text)}</a></li>`)
+      .join("");
+    output = output.replace(/<cy-toc\b[^>]*\/?>/gi, `<nav class="cy-toc" aria-label="Contents"><b>Contents</b><ol>${items}</ol></nav>`);
+  } else {
+    output = output.replace(/<cy-toc\b[^>]*\/?>/gi, "");
+  }
+
   return output;
 }
 
 /** Styles the kit depends on, injected ahead of the author's own CSS. */
 export const PAGE_KIT_CSS = `
+.cy-toc{border:1px solid #e6e5f0;border-radius:12px;padding:12px 16px;margin:16px 0;background:#fbfbfe}
+.cy-toc b{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#6b6880;margin-bottom:6px}
+.cy-toc ol{margin:0;padding-left:18px}
+.cy-toc li{margin:2px 0;font-size:13px}
+.cy-toc .cy-toc-l3{margin-left:14px;font-size:12px}
+.cy-toc a{color:#3f3a63;text-decoration:none}
+.cy-toc a:hover{text-decoration:underline}
+.cy-figure{margin:18px 0}
+.cy-figure img{max-width:100%;border-radius:12px;border:1px solid #e6e5f0;display:block}
+.cy-figure figcaption{margin-top:6px;font-size:12px;color:#6b6880}
+.cy-code{background:#f6f6fb;border:1px solid #e6e5f0;border-radius:10px;padding:12px 14px;overflow-x:auto;font-size:12px;line-height:1.5}
+.cy-code code{background:none;padding:0;font-size:12px}
 .cy-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:14px 0}
 .cy-metric{border:1px solid #e6e5f0;border-radius:12px;padding:12px 14px;background:#fbfbfe}
 .cy-metric-value{font-size:22px;font-weight:700;letter-spacing:-.02em;color:#16151f}

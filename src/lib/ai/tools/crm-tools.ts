@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { analyseUploadedTable } from "@/lib/pages/table-analysis";
 import { researchCompanySite, signalsFromResearch, evidenceFromResearch } from "@/lib/company-research";
 import { toolRegistry } from "./registry";
 import { ToolDefinition, ToolExecutionContext } from "./types";
@@ -688,6 +689,29 @@ export const CRM_TOOLS: ToolDefinition[] = [
         orderBy: { createdAt: "desc" },
       });
       return { success: true, data: files };
+    },
+  },
+  {
+    id: "analyse_table",
+    name: "Analyse Uploaded Table",
+    description:
+      "Profile an uploaded .csv or .xlsx file: row and column counts, inferred column types, missing values, and for numeric columns the min, max, mean, median and sum. Use this whenever the user asks a question about a spreadsheet instead of reading it as text.",
+    category: "documents",
+    riskClass: "CLASS_A",
+    requiresApproval: false,
+    readOnly: true,
+    inputSchema: { attachmentId: "string — the attachment id shown in the conversation" },
+    async execute(input: { attachmentId: string }, context: ToolExecutionContext) {
+      const result = await analyseUploadedTable(input.attachmentId, context.userId);
+      if (!result.ok) return { success: false, error: result.error };
+      return {
+        success: true,
+        data: {
+          file: result.file,
+          note: "Numbers are computed here, not estimated. Cite them exactly; say 'about' only when rounding for readability.",
+          sheets: result.sheets,
+        },
+      };
     },
   },
   {

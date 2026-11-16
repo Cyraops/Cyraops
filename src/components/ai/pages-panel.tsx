@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Check, Copy, ExternalLink, FileText, Globe, History, Link2, Loader2, Lock, RefreshCw, X } from "lucide-react";
-import { PAGE_KIT_CSS, renderKit } from "@/lib/pages/kit";
+import { Download, Check, Copy, ExternalLink, FileText, Globe, History, Link2, Loader2, Lock, RefreshCw, X } from "lucide-react";
+import { PAGE_KIT_CSS, renderDocument } from "@/lib/pages/kit";
 
 export interface PageMeta {
   id: string;
@@ -37,7 +37,7 @@ function documentFor(html: string): string {
   th{background:#f7f7fb;font-weight:600}
   img{max-width:100%;height:auto}code{background:#f2f1f8;padding:1px 4px;border-radius:4px;font-size:11px}
   a{color:#5b4bd6}
-</style></head><body>${renderKit(html)}</body></html>`;
+</style></head><body>${renderDocument(html)}</body></html>`;
 }
 
 export function PagesPanel({
@@ -51,6 +51,7 @@ export function PagesPanel({
 }) {
   const [isPublic, setIsPublic] = useState(page.isPublic);
   const [busy, setBusy] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [slug, setSlug] = useState(page.publicSlug);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -198,6 +199,51 @@ export function PagesPanel({
           >
             <RefreshCw size={11} /> New link
           </button>
+          <span className="relative">
+            <button
+              onClick={() => setExportOpen((open) => !open)}
+              className="flex h-7 items-center gap-1 rounded-lg border border-[var(--border)] px-2 text-caption font-semibold text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
+              title="Download this page"
+              aria-haspopup="menu"
+              aria-expanded={exportOpen}
+            >
+              <Download size={11} /> Export
+            </button>
+            {exportOpen && (
+              <span
+                role="menu"
+                className="absolute right-0 top-8 z-40 flex w-52 flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] py-1 shadow-xl"
+              >
+                <a
+                  role="menuitem"
+                  href={`/api/pages/${page.id}/export?format=print`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setExportOpen(false)}
+                  className="px-3 py-1.5 text-left text-caption hover:bg-[var(--hover)]"
+                >
+                  PDF <span className="text-[var(--muted)]">— print dialog, Save as PDF</span>
+                </a>
+                <a
+                  role="menuitem"
+                  href={`/api/pages/${page.id}/export?format=md`}
+                  onClick={() => setExportOpen(false)}
+                  className="px-3 py-1.5 text-left text-caption hover:bg-[var(--hover)]"
+                >
+                  Markdown <span className="text-[var(--muted)]">— for docs or a repo</span>
+                </a>
+                <a
+                  role="menuitem"
+                  href={`/api/pages/${page.id}/export?format=html`}
+                  onClick={() => setExportOpen(false)}
+                  className="px-3 py-1.5 text-left text-caption hover:bg-[var(--hover)]"
+                >
+                  HTML <span className="text-[var(--muted)]">— self-contained file</span>
+                </a>
+              </span>
+            )}
+          </span>
+
           <button
             onClick={() => void toggleHistory()}
             className="flex h-7 items-center gap-1 rounded-lg border border-[var(--border)] px-2 text-caption font-semibold text-[var(--muted)] transition hover:bg-[var(--hover)]"

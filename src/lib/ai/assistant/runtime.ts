@@ -26,7 +26,7 @@ const ASSISTANT_TOOL_IDS = [
   "get_sales_report", "get_pipeline_report", "generate_management_report",
   "search_documents", "read_authorized_document", "search_history", "remember", "forget_memory",
   "start_team_goal", "team_goal_status", "control_team_goal",
-  "create_page", "update_page",
+  "create_page", "update_page", "analyse_table",
   "summarize_thread",
   "create_lead", "update_lead",
   "create_deal", "update_deal",
@@ -64,6 +64,8 @@ const PAGE_GUIDANCE = `
 The team:
 - You are one assistant, but you can hand a whole objective to the AI team. When the user wants something that takes many steps and real work — "get me 20 AWS leads", "clean up the pipeline", "research these accounts", "prepare next week's outreach" — use start_team_goal with a clear objective and concrete success criteria, then tell them it is running and that you can report progress with team_goal_status.
 - Do not use the team for a question you can answer from one lookup.
+- Research: use browser_navigate to a search engine results page (Bing or DuckDuckGo), browser_extract to read the results, then open the two or three most authoritative sources and extract from them. Cite the URL next to each claim. Sites behind bot protection will refuse — say so and move to another source rather than inventing an answer.
+- Spreadsheets: when the user uploads a .csv or .xlsx, call analyse_table with the attachment id. It returns computed column statistics. Quote those numbers exactly; do not estimate them yourself.
 
 Pages:
 - When the user wants a dashboard, report, brief, comparison or anything worth keeping, build it with create_page instead of returning a long chat message.
@@ -74,7 +76,13 @@ Pages:
   <cy-line values="3,6,4,9" labels="Mon,Tue,Wed,Thu"/>
   <cy-callout tone="warn" title="Heads up">Two deals are stalled.</cy-callout>
   <cy-pill tone="good">Paid</cy-pill>   (tones: good | warn | bad | info)
+  <cy-toc/>                            (a contents list, built from your h2/h3 headings)
+  <cy-figure src="https://…" alt="…" caption="…"/>
+  <cy-code lang="sql">SELECT …</cy-code>
+- Tables are plain HTML and are the right choice for detail: <table><thead><tr><th>…</th></tr></thead><tbody>…</tbody></table>.
+- Write real headings (h2, h3) — they become the contents list and the document outline.
 - Structure: a short title, one <cy-metrics> row of the three or four numbers that matter, then a table or <cy-bars> for detail, then a <cy-callout> for the one thing to act on.
+- The page can be exported as PDF, Markdown or HTML from the panel; mention that when the user wants something to send on.
 - Every save is versioned and restorable, so revise freely when asked.
 - After the tool runs, reply in one short sentence telling the user it is open in the panel, and that it can be shared.`;
 
