@@ -28,12 +28,6 @@ interface ChatItem {
   toolDurationMs?: number;
 }
 
-interface MemoryItem {
-  id: string;
-  content: string;
-  updatedAt: string;
-}
-
 interface Conversation {
   id: string;
   title: string;
@@ -217,7 +211,6 @@ export function BotWorkspace() {
   const [conversationId, setConversationId] = useState("");
   const [conversationTitle, setConversationTitle] = useState("New chat");
   const [messages, setMessages] = useState<ChatItem[]>([]);
-  const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -495,16 +488,6 @@ export function BotWorkspace() {
     }
   };
 
-  const loadMemories = useCallback(async () => {
-    try {
-      const response = await fetch("/api/assistant/memories");
-      const data = await response.json();
-      if (Array.isArray(data.memories)) setMemories(data.memories);
-    } catch {
-      // memory panel is optional
-    }
-  }, []);
-
   const loadSpaces = useCallback(async () => {
     try {
       const response = await fetch("/api/conversations");
@@ -586,14 +569,13 @@ export function BotWorkspace() {
               }))
             : []
         );
-        void loadMemories();
       } catch {
         setError("Could not load your assistant.");
       } finally {
         setLoading(false);
       }
     },
-    [loadMemories]
+    []
   );
 
   useEffect(() => {
@@ -903,7 +885,6 @@ export function BotWorkspace() {
       );
       if (nextPending) setPendingAction(nextPending);
       speak(replyText);
-      void loadMemories();
       void loadConversations();
       // A page tool ran during this turn — surface the result immediately.
       if (toolCallsUsed.some((tool) => /browser|navigate|screenshot/i.test(tool))) setBrowserOpen(true);
@@ -933,15 +914,6 @@ export function BotWorkspace() {
     } finally {
       abortRef.current = null;
       setBusy(false);
-    }
-  };
-
-  const forget = async (memoryId: string) => {
-    try {
-      const response = await fetch(`/api/assistant/memories?id=${encodeURIComponent(memoryId)}`, { method: "DELETE" });
-      if (response.ok) setMemories((prev) => prev.filter((memory) => memory.id !== memoryId));
-    } catch {
-      // ignore
     }
   };
 
@@ -1708,30 +1680,6 @@ export function BotWorkspace() {
 
       {/* Right rail — transparency */}
       <aside className="hidden min-h-0 flex-col overflow-y-auto border-l border-[var(--border)] p-4 xl:flex">
-        <p className="mb-2 flex items-center gap-1.5 text-caption font-bold uppercase tracking-widest text-[var(--muted)]">
-          <Sparkles size={12} /> What it remembers
-        </p>
-        {memories.length === 0 ? (
-          <p className="text-meta leading-relaxed text-[var(--muted)]">
-            Nothing yet. Tell it about yourself and it will remember — you can delete anything here.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {memories.map((memory) => (
-              <div key={memory.id} className="group flex items-start justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2">
-                <p className="text-meta leading-relaxed text-[var(--text)]">{memory.content}</p>
-                <button
-                  onClick={() => void forget(memory.id)}
-                  className="mt-0.5 shrink-0 text-[var(--muted)] opacity-0 transition group-hover:opacity-100 hover:text-rose-500"
-                  title="Forget this"
-                >
-                  <Trash2 size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* "What it can see" was a frozen list that never matched the selected
             agent's tools, so it is gone rather than kept as decoration. */}
         <button
