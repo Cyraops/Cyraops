@@ -369,6 +369,9 @@ export function TicketDesk() {
   );
   const selectCls =
     "h-8 w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-caption outline-none focus:border-accent";
+  /** A row-level control: looks like text until you hover it. */
+  const rowSelectCls =
+    "h-7 w-full cursor-pointer appearance-none truncate rounded-md border border-transparent bg-transparent px-1 text-caption outline-none transition hover:border-[var(--border)] hover:bg-[var(--surface-2)] focus:border-accent";
   const inputCls = selectCls;
 
   return (
@@ -773,8 +776,20 @@ export function TicketDesk() {
                         </span>
                       </span>
                       {!narrow && (
-                        <span className="min-w-0 truncate text-caption text-[var(--muted)]" title={t.project?.name ?? "No project"}>
-                          {t.project?.name ?? "—"}
+                        <span className="relative flex min-w-0 items-center">
+                          <select
+                            value={t.project?.id ?? ""}
+                            onChange={(event) => void patch(t.id, { projectId: event.target.value }, "project")}
+                            aria-label={`Project for ${t.title}`}
+                            title="Move this ticket to another project"
+                            className={rowSelectCls}
+                          >
+                            {!t.project && <option value="">No project</option>}
+                            {projects.map((project) => (
+                              <option key={project.id} value={project.id}>{project.name}</option>
+                            ))}
+                          </select>
+                          <ChevronDown size={11} className="pointer-events-none absolute right-0.5 text-[var(--muted)]" />
                         </span>
                       )}
                       {!narrow && (
@@ -785,15 +800,35 @@ export function TicketDesk() {
                           <span className="truncate text-caption text-[var(--muted)]">{contact}</span>
                         </span>
                       )}
-                      <span>
-                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone(t.status)}`}>
-                          {STATUS_LABEL[t.status] ?? t.status}
-                        </span>
+                      <span className="relative flex items-center">
+                        <select
+                          value={t.status}
+                          onChange={(event) => void patch(t.id, { status: event.target.value }, "status")}
+                          aria-label={`Status for ${t.title}`}
+                          title="Change the status"
+                          className={rowSelectCls}
+                        >
+                          {["BACKLOG", ...STATUSES].map((status) => (
+                            <option key={status} value={status}>{STATUS_LABEL[status] ?? status}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={11} className="pointer-events-none absolute right-0.5 text-[var(--muted)]" />
                       </span>
                       {!narrow && (
-                        <span className="flex items-center gap-1.5 text-caption capitalize text-[var(--muted)]">
-                          <span className={`h-2 w-2 rounded-sm ${priorityDot(t.priority)}`} />
-                          {t.priority.toLowerCase()}
+                        <span className="relative flex items-center gap-1">
+                          <span className={`h-2 w-2 shrink-0 rounded-sm ${priorityDot(t.priority)}`} />
+                          <select
+                            value={t.priority}
+                            onChange={(event) => void patch(t.id, { priority: event.target.value }, "priority")}
+                            aria-label={`Priority for ${t.title}`}
+                            title="Change the priority"
+                            className={`${rowSelectCls} capitalize`}
+                          >
+                            {PRIORITIES.map((priority) => (
+                              <option key={priority} value={priority}>{humanise(priority)}</option>
+                            ))}
+                          </select>
+                          <ChevronDown size={11} className="pointer-events-none absolute right-0.5 text-[var(--muted)]" />
                         </span>
                       )}
                       {!narrow && (

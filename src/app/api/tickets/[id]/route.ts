@@ -31,6 +31,8 @@ const triageSchema = z.object({
   // project-scoped, on /api/tasks/:id.
   title: z.string().trim().min(1).max(180).optional(),
   description: z.string().max(10000).optional(),
+  /// Filing a ticket in the right project is triage. Archiving it is not.
+  projectId: z.string().min(1).optional(),
   status: taskStatusSchema.optional(),
   priority: prioritySchema.optional(),
   kind: taskKindSchema.nullable().optional(),
@@ -61,6 +63,11 @@ export async function PATCH(request: NextRequest, context: Context) {
   });
   if (!existing) return jsonError("Ticket not found", 404);
 
+  if (data.projectId && data.projectId !== existing.projectId) {
+    const project = await db.project.findFirst({ where: { id: data.projectId }, select: { id: true } });
+    if (!project) return jsonError("That project does not exist", 400);
+  }
+
   // Assignment: any active teammate may own a ticket. The project-membership
   // rule belongs to project tasks, not to a shared desk.
   let nextAssignees: ReturnType<typeof normaliseAssigneeSet> | null = null;
@@ -80,6 +87,7 @@ export async function PATCH(request: NextRequest, context: Context) {
     where: { id },
     data: {
       ...(data.title !== undefined ? { title: data.title } : {}),
+      ...(data.projectId !== undefined ? { projectId: data.projectId } : {}),
       ...(data.description !== undefined ? { description: data.description } : {}),
       ...(data.status !== undefined ? { status: data.status } : {}),
       ...(data.priority !== undefined ? { priority: data.priority } : {}),
@@ -112,6 +120,7 @@ export async function PATCH(request: NextRequest, context: Context) {
       resolution: true,
       closedAt: true,
       updatedAt: true,
+      project: { select: { id: true, name: true } },
     },
   });
 

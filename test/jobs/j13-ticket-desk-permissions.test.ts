@@ -131,7 +131,34 @@ test("J13: an empty subject is refused", async () => {
   assert.equal((await db.task.findUniqueOrThrow({ where: { id: ticket.id } })).title, "ALARM: S3 bucket policy changes");
 });
 
-test("J13: the desk cannot move a ticket to another project or archive it", async () => {
+test("J13: the desk can file a ticket into another project", async () => {
+  await resetDb();
+  const { owner, member, ticket } = await foreignTicket();
+  const target = await db.project.create({ data: { name: "Support inbox", ownerId: owner.id } });
+
+  const res = await invoke(triage, `/api/tickets/${ticket.id}`, {
+    method: "PATCH",
+    userId: member.id,
+    params: { id: ticket.id },
+    body: { projectId: target.id },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal((await db.task.findUniqueOrThrow({ where: { id: ticket.id } })).projectId, target.id);
+});
+
+test("J13: filing into a project that does not exist is refused", async () => {
+  await resetDb();
+  const { member, ticket } = await foreignTicket();
+  const res = await invoke(triage, `/api/tickets/${ticket.id}`, {
+    method: "PATCH",
+    userId: member.id,
+    params: { id: ticket.id },
+    body: { projectId: "no-such-project" },
+  });
+  assert.equal(res.status, 400);
+});
+
+test("J13: the desk cannot archive a ticket", async () => {
   await resetDb();
   const { member, project, ticket } = await foreignTicket();
   const other = await db.project.create({ data: { name: "Elsewhere", ownerId: (await db.user.findFirstOrThrow({ where: { role: "OWNER" } })).id } });
@@ -140,9 +167,9 @@ test("J13: the desk cannot move a ticket to another project or archive it", asyn
     method: "PATCH",
     userId: member.id,
     params: { id: ticket.id },
-    body: { projectId: other.id, archive: true },
+    body: { archive: true },
   });
-  // Unknown keys are stripped, so this succeeds as a no-op rather than moving the task.
+  // Unknown keys are stripped: this is a no-op, not an archive.
   assert.ok([200, 400].includes(res.status));
 
   const stored = await db.task.findUniqueOrThrow({ where: { id: ticket.id } });
