@@ -132,6 +132,7 @@ export function VoiceEarth({ phase, personPulseAt, speakPulseAt, onTap, classNam
 
     let disposed = false;
     let raf = 0;
+    const moonWorld = new THREE.Vector3();
     let speed = 0; // current spin, eased towards the target
     let earthSpin = Math.random() * Math.PI * 2;
     let orbitAngle = Math.random() * Math.PI * 2;
@@ -163,10 +164,19 @@ export function VoiceEarth({ phase, personPulseAt, speakPulseAt, onTap, classNam
       moonOrbit.rotation.y = orbitAngle;
       moon.rotation.y = -orbitAngle + Math.PI; // one face always to Earth
 
-      // A gentle parallax with the pointer, without moving the planets.
-      const pointerX = (pointerRef.current.x - 0.5) * 0.5;
+      /**
+       * Frame the pair, not the planet.
+       *
+       * Centering the canvas on Earth leaves the Moon hanging off one side, so
+       * the pair reads as off-centre for half of every orbit. Shifting the
+       * camera by half the Moon's offset keeps the Earth-and-Moon cluster in the
+       * middle, and lets Earth drift gently as the Moon swings.
+       */
+      moon.getWorldPosition(moonWorld);
+      const clusterX = moonWorld.x * 0.5;
+      const pointerX = (pointerRef.current.x - 0.5) * 0.4;
+      camera.position.x += (clusterX + pointerX - camera.position.x) * Math.min(1, dt * 1.6);
       const pointerY = (pointerRef.current.y - 0.5) * 0.3;
-      camera.position.x += (pointerX - camera.position.x) * Math.min(1, dt * 2.5);
       camera.position.y += (0.7 + pointerY - camera.position.y) * Math.min(1, dt * 2.5);
       camera.lookAt(0, 0, 0);
 
