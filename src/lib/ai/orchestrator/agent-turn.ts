@@ -131,10 +131,19 @@ export async function runAgentChatTurn(params: {
   conversationId?: string;
 }): Promise<AgentChatTurnResult> {
   const toolIds = parseToolIds(params.agent.tools);
+  /**
+   * Every declared tool is offered to the model, including CLASS_C.
+   *
+   * CLASS_C used to be filtered out here, which meant an irreversible action
+   * such as sending email was invisible to the model: it could not call the
+   * tool, so it wrote the request as text ("I've queued that email") or emitted
+   * raw markup. Hiding a tool does not make it safe — the approval gate does
+   * that, and it runs after the model asks. The gate, not the filter, is the
+   * boundary.
+   */
   const tools = toolIds
     .map((id) => toolRegistry.getTool(id))
-    .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool))
-    .filter((tool) => tool.riskClass === "CLASS_A" || tool.riskClass === "CLASS_B");
+    .filter((tool): tool is NonNullable<typeof tool> => Boolean(tool));
 
   const functions = tools.map(toolToFunction);
 

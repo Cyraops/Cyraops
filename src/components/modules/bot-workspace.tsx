@@ -770,7 +770,12 @@ export function BotWorkspace() {
       if (!response.ok || (approve && data.status && data.status !== "EXECUTED")) {
         // Revert the card so it stays actionable, and say what actually happened.
         setPendingAction((current) => (current ? { ...current, answered: undefined } : current));
-        setError(data.error || (data.status === "FAILED" ? `${data.toolName || "That action"} failed to run.` : "That action could not be completed."));
+        // The tool's own reason is the useful message: "mailbox is not configured" beats "failed to run".
+        setError(
+          data.error ||
+            data.result?.error ||
+            (data.status === "FAILED" ? `${data.toolName || "That action"} failed to run.` : "That action could not be completed.")
+        );
         return;
       }
       const base = approve

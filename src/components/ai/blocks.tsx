@@ -3,6 +3,7 @@
 import { Check, X } from "lucide-react";
 import { Markdown } from "./markdown";
 import { parseToolSteps, ToolActivity } from "./tool-activity";
+import { stripToolMarkup } from "@/lib/ai/tool-markup";
 
 /**
  * A message is a list of typed blocks, not a string.
@@ -47,7 +48,11 @@ export interface PendingAsk {
 export function toBlocks(message: BlockSource, ask?: PendingAsk | null): MessageBlock[] {
   const blocks: MessageBlock[] = [];
 
-  if (message.content) blocks.push({ kind: "text", text: message.content });
+  if (message.content) {
+    // Models occasionally write tool calls as text; never show that to a reader.
+    const text = stripToolMarkup(message.content);
+    if (text) blocks.push({ kind: "text", text });
+  }
   if (message.role === "assistant" && parseToolSteps(message.toolCalls).length) {
     blocks.push({
       kind: "steps",

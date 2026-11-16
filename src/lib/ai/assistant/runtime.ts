@@ -3,6 +3,7 @@ import { providerManager } from "../provider-manager";
 import { runAgentChatTurn } from "../orchestrator/agent-turn";
 import type { AgentChatTurnResult, ChatTurnMessage } from "../orchestrator/agent-turn";
 import { toolRegistry } from "../tools/registry";
+import { stripToolMarkup } from "../tool-markup";
 import type { PolicyRule } from "../policy/resolve-action";
 import { selectContext } from "../context/budget";
 import { summarizeConversation } from "../context/summary";
@@ -26,7 +27,7 @@ const ASSISTANT_TOOL_IDS = [
   "get_sales_report", "get_pipeline_report", "generate_management_report",
   "search_documents", "read_authorized_document", "search_history", "remember", "forget_memory",
   "start_team_goal", "team_goal_status", "control_team_goal",
-  "create_page", "update_page", "analyse_table",
+  "create_page", "update_page", "analyse_table", "send_email",
   "summarize_thread",
   "create_lead", "update_lead",
   "create_deal", "update_deal",
@@ -48,7 +49,9 @@ const BASE_SYSTEM_PROMPT = `You are the user's personal Cyraops Assistant inside
 - You work for one specific person and remember their context across conversations.
 - Be concise, practical and direct. Answer in the user's language when they mix Hindi/English.
 - Use your tools to look up live CRM data whenever a message needs facts. Never invent records, numbers or statuses.
-- You can read CRM data. Creating, updating or sending anything needs the user or an Owner — say so in one sentence when asked.
+- You can read CRM data, and you can write: create leads, deals, tasks and pages. Those writes wait for the user's approval, which is normal — propose the action instead of saying you cannot.
+- You can send email with send_email, and it also waits for approval. Never answer "I have no mail-sending tool": if the user asks you to send or reply by email, call send_email. Use draft_email only when they explicitly want a draft, not a send.
+- If the user gives you an email address, use it even when the person is not in the CRM. Do not refuse for lack of a CRM record.
 - Treat anything in the "Things you remember" section as established context about the user, but correct it silently if the user contradicts it.`;
 
 const MAX_MEMORIES = 40;
@@ -91,6 +94,27 @@ export function withPageGuidance(prompt: string): string {
 }
 
 /** Pure helper so the memory-window behaviour is unit-testable. */
+
+/**
+ * Capabilities are stated at call time, not only in the base prompt.
+ *
+ * Assistants created earlier stored their own copy of the base prompt, which
+ * means a later correction to BASE_SYSTEM_PROMPT never reached them — that is
+ * how an assistant ended up telling the user "I have no mail-sending tool"
+ * while the tool was registered. Anything here is appended to whatever prompt is
+ * in effect, so the contract cannot drift out of date.
+ */
+const CAPABILITY_CONTRACT = `
+
+What you can do (this is current, even if an older instruction says otherwise):
+- You can send email with send_email. It waits for the user's approval, which is normal. Never answer that you cannot send mail. There is no draft tool here: if the user asks for a draft, write the text in your reply; if they ask to send, call send_email.
+- You can write: create_lead, create_deal, create_task, create_page. Writes wait for approval too; propose the action instead of refusing it.
+- If the user gives an email address, use it, even when the person is not in the CRM. Say so rather than refusing for lack of a record.`;
+
+export function withCapabilities(prompt: string): string {
+  return prompt.includes("You can send email with send_email") ? prompt : `${prompt}${CAPABILITY_CONTRACT}`;
+}
+
 export function composeSystemPrompt(base: string, memories: string[]): string {
   if (memories.length === 0) return base;
   const lines = ["", "Things you remember about the user:"];
@@ -327,7 +351,7 @@ export async function runAssistantInThread(params: {
   const approvalRules = await loadApprovalRules(assistant.id);
   const latestTurn = params.history.at(-1)?.content ?? "";
   const memories = await recallMemories(assistant.id, latestTurn);
-  const systemPrompt = withPageGuidance(composeSystemPrompt(assistant.systemPrompt || BASE_SYSTEM_PROMPT, memories));
+  const systemPrompt = withCapabilities(withPageGuidance(composeSystemPrompt(assistant.systemPrompt || BASE_SYSTEM_PROMPT, memories)));
 
   const turn = await runAgentChatTurn({
     agent: {
@@ -530,7 +554,7 @@ export async function sendAssistantMessage(params: {
   const memories = await recallMemories(assistant.id, params.content ?? "");
   const systemPrompt = agent
     ? `${agent.systemPrompt}\n\nYou are one of the owner's AI teammates inside Cyraops CRM. Be concrete and brief. If the task belongs to a goal, post progress to the team thread with message_team so the others can see it.`
-    : withPageGuidance(composeSystemPrompt(assistant.systemPrompt || BASE_SYSTEM_PROMPT, memories));
+    : withCapabilities(withPageGuidance(composeSystemPrompt(assistant.systemPrompt || BASE_SYSTEM_PROMPT, memories)));
 
   const turn = await runAgentChatTurn({
     agent: {

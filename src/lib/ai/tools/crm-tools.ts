@@ -735,9 +735,76 @@ export const CRM_TOOLS: ToolDefinition[] = [
   // COMMUNICATION & APPROVAL
   // ==========================================
   {
+    id: "send_email",
+    name: "Send Email",
+    description:
+      "Sends an email now, from the shared company mailbox. Use this whenever the user says send, email, reply or follow up with someone — the message leaves the CRM and cannot be recalled, so a human approves it first. This is the only mail tool: do not answer that you cannot send, and do not paste a draft instead.",
+    category: "communication",
+    riskClass: "CLASS_C",
+    requiresApproval: true,
+    // Irreversible outside the CRM: never allow it to be auto-approved.
+    explicitApproval: true,
+    inputSchema: {
+      to: "string — one email address, or several separated by commas",
+      subject: "string",
+      body: "string — the plain-text body",
+      cc: "string — optional, comma separated",
+    },
+    async execute(input: { to: string; subject: string; body: string; cc?: string }, context: ToolExecutionContext) {
+      const addresses = (value: string | undefined) =>
+        (value ?? "")
+          .split(/[,;\s]+/)
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+
+      const to = addresses(input.to);
+      const cc = addresses(input.cc);
+      const invalid = [...to, ...cc].filter((address) => !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(address));
+      if (to.length === 0) return { success: false, error: "Give the email at least one recipient address." };
+      if (invalid.length > 0) return { success: false, error: `These addresses are not valid: ${invalid.join(", ")}` };
+      if (!input.subject?.trim()) return { success: false, error: "The email needs a subject." };
+      if (!input.body?.trim()) return { success: false, error: "The email needs a body." };
+
+      // Honest failure rather than a silent no-op when the mailbox is unset.
+      const { config } = getMailboxConfig();
+      if (!config.isConfigured) {
+        return {
+          success: false,
+          error:
+            "The company mailbox is not configured on this server, so no email can be sent. Ask an owner to set GODADDY_EMAIL_ADDRESS and GODADDY_EMAIL_PASSWORD.",
+        };
+      }
+
+      try {
+        const sent = await EmailService.sendEmail({
+          userId: context.userId,
+          idempotencyKey: `ai_send_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          to,
+          cc: cc.length ? cc : undefined,
+          subject: input.subject.trim(),
+          bodyText: input.body,
+        });
+        return {
+          success: true,
+          data: {
+            sent: true,
+            from: config.email,
+            to,
+            cc: cc.length ? cc : undefined,
+            subject: input.subject.trim(),
+            messageId: sent?.messageId ?? null,
+            note: "The email was sent from the shared company mailbox.",
+          },
+        };
+      } catch (error: any) {
+        return { success: false, error: error?.message || "The mailbox refused the message" };
+      }
+    },
+  },
+  {
     id: "draft_email",
     name: "Draft Outreach Email",
-    description: "Saves a personalized outbound email as a private CRM draft for human review. Never sends it.",
+    description: "Saves a draft for the Email module to review later. Never sends. The assistant does not use this.",
     category: "communication",
     riskClass: "CLASS_B",
     requiresApproval: false,
