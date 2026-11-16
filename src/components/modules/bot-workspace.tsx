@@ -257,6 +257,7 @@ export function BotWorkspace() {
   /** Null = the personal assistant. Otherwise the AI teammate being talked to. */
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [botModal, setBotModal] = useState<{ mode: "create" | "edit"; agent?: any; template?: string } | null>(null);
+  const [teamOpen, setTeamOpen] = useState(false);
   const [teammates, setTeammates] = useState<
     Array<{
       id?: string;
@@ -1098,10 +1099,19 @@ export function BotWorkspace() {
 
           {teammates.length > 0 && (
             <>
-              <p className="mt-2 px-1.5 text-caption font-bold uppercase tracking-widest text-[var(--muted)]">
-                AI teammates
-              </p>
-              <div className="mt-1 space-y-0.5">
+              <button
+                onClick={() => setTeamOpen((open) => !open)}
+                aria-expanded={teamOpen}
+                aria-controls="ai-teammates"
+                className="mt-2 flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left text-caption font-bold uppercase tracking-widest text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
+              >
+                <ChevronDown size={11} className={`transition-transform ${teamOpen ? "" : "-rotate-90"}`} />
+                <span className="flex-1">AI teammates</span>
+                <span className="rounded-full bg-[var(--surface-2)] px-1.5 text-[10px] font-semibold normal-case tracking-normal">
+                  {teammates.length}
+                </span>
+              </button>
+              <div id="ai-teammates" className={`mt-1 space-y-0.5 ${teamOpen ? "" : "hidden"}`}>
                 {teammates.map((mate) => (
                   <span key={mate.slug} className="group/row relative flex items-center">
                   <button
@@ -1142,7 +1152,7 @@ export function BotWorkspace() {
               </div>
               <button
                 onClick={() => setBotModal({ mode: "create" })}
-                className="mt-1 flex w-full items-center gap-2 rounded-lg border border-dashed border-[var(--border)] px-1.5 py-1.5 text-left text-[11px] font-semibold text-[var(--muted)] transition hover:border-accent/40 hover:text-accent"
+                className={`mt-1 w-full items-center gap-2 rounded-lg border border-dashed border-[var(--border)] px-1.5 py-1.5 text-left text-[11px] font-semibold text-[var(--muted)] transition hover:border-accent/40 hover:text-accent ${teamOpen ? "flex" : "hidden"}`}
               >
                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--surface-2)]">
                   <Plus size={11} />
