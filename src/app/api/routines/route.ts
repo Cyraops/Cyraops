@@ -55,6 +55,7 @@ const createSchema = z.object({
   skillId: z.string().trim().min(1).optional(),
   instructions: z.string().max(2000).optional(),
   triggerType: z.enum(["SCHEDULE", "WEBHOOK", "EMAIL", "RECORD_CHANGE"]).optional(),
+  emailSenders: z.string().max(500).optional(),
 });
 
 export async function POST(request: NextRequest) {

@@ -10,19 +10,26 @@ import { isValidCron, nextCronRun } from "./cron";
  */
 export interface CreateRoutineInput {
   name: string;
-  cron: string;
+  /** Required for SCHEDULE triggers; ignored for EMAIL. */
+  cron?: string;
   agentSlug?: string;
   agentId?: string;
   instructions?: string;
   skillId?: string;
   userId: string;
   triggerType?: "SCHEDULE" | "WEBHOOK" | "EMAIL" | "RECORD_CHANGE";
+  /** EMAIL triggers only fire for mail from these senders. */
+  emailSenders?: string;
 }
 
 export async function createRoutine(input: CreateRoutineInput) {
+  const triggerType = input.triggerType ?? "SCHEDULE";
   const cron = (input.cron ?? "").trim();
-  if (!isValidCron(cron)) {
+  if (triggerType === "SCHEDULE" && !isValidCron(cron)) {
     return { ok: false as const, error: `"${cron}" is not a valid cron expression.` };
+  }
+  if (triggerType === "EMAIL" && !(input.emailSenders ?? "").trim()) {
+    return { ok: false as const, error: "An email-triggered routine needs at least one sender address." };
   }
 
   const agent = input.agentId
@@ -54,12 +61,14 @@ export async function createRoutine(input: CreateRoutineInput) {
     data: {
       name: input.name.trim().slice(0, 120),
       description: (input.instructions ?? "").slice(0, 500),
-      cronExpression: cron,
+      cronExpression: triggerType === "SCHEDULE" ? cron : "",
       skillId,
       agentId: agent.id,
       isEnabled: true,
-      triggerType: input.triggerType ?? "SCHEDULE",
-      nextRunAt: nextCronRun(cron, new Date()),
+      triggerType,
+      emailSenders: (input.emailSenders ?? "").trim(),
+      // Trigger-driven routines have no clock: the trigger decides when.
+      nextRunAt: triggerType === "SCHEDULE" ? nextCronRun(cron, new Date()) : null,
     },
     select: { id: true, name: true, cronExpression: true, nextRunAt: true },
   });

@@ -737,6 +737,96 @@ export const CRM_TOOLS: ToolDefinition[] = [
   // COMMUNICATION & APPROVAL
   // ==========================================
 
+
+  {
+    id: "create_event",
+    name: "Schedule Meeting",
+    description:
+      "Puts a meeting on the calendar: a title, a start time, how long it runs, who is attending and where. Use it for 'book a call with X on Thursday at 3'.",
+    category: "tasks",
+    riskClass: "CLASS_B",
+    requiresApproval: true,
+    inputSchema: {
+      title: "string",
+      startsAt: "string — ISO date-time, e.g. 2026-11-19T15:00:00Z",
+      minutes: "number — length in minutes, default 30",
+      attendees: "string — optional, comma separated addresses",
+      location: "string — optional",
+      notes: "string — optional",
+    },
+    async execute(
+      input: { title: string; startsAt: string; minutes?: number; attendees?: string; location?: string; notes?: string },
+      context: ToolExecutionContext
+    ) {
+      const startsAt = new Date(input.startsAt);
+      if (Number.isNaN(startsAt.getTime())) {
+        return { success: false, error: `"${input.startsAt}" is not a date I can read. Give an ISO time, e.g. 2026-11-19T15:00:00Z.` };
+      }
+      const minutes = Math.min(600, Math.max(5, input.minutes ?? 30));
+      const meeting = await db.calendarEvent.create({
+        data: {
+          title: input.title.trim().slice(0, 160),
+          startsAt,
+          endsAt: new Date(startsAt.getTime() + minutes * 60_000),
+          attendees: (input.attendees ?? "").trim(),
+          location: input.location?.trim() || null,
+          notes: input.notes ?? "",
+          creatorId: context.userId,
+        },
+        select: { id: true, title: true, startsAt: true, endsAt: true, attendees: true, location: true },
+      });
+      return { success: true, data: { meeting: meeting.title, startsAt: meeting.startsAt, endsAt: meeting.endsAt, attendees: meeting.attendees || null, location: meeting.location } };
+    },
+  },
+  {
+    id: "archive_task",
+    name: "Archive Ticket",
+    description:
+      "Takes a ticket off the queue without deleting it: it disappears from lists but stays in the database and can be restored. Use it for duplicates and mistakes rather than deleting records.",
+    category: "tasks",
+    riskClass: "CLASS_B",
+    requiresApproval: true,
+    inputSchema: { task: "string — the ticket id or its #SR-number" },
+    async execute(input: { task: string }, context: ToolExecutionContext) {
+      const raw = String(input.task ?? "").trim();
+      const numberMatch = /(?:#?SR-)?(\d+)$/i.exec(raw);
+      const task = raw
+        ? await db.task.findFirst({
+            where: /^c[a-z0-9]{20,}$/i.test(raw) ? { id: raw } : numberMatch ? { number: Number(numberMatch[1]) } : { id: raw },
+            select: { id: true, number: true, title: true, archivedAt: true },
+          })
+        : null;
+      if (!task) return { success: false, error: `No ticket found for "${raw}".` };
+      if (task.archivedAt) return { success: true, data: { ticket: `#SR-${task.number}`, note: "It was already archived." } };
+
+      await db.task.update({ where: { id: task.id }, data: { archivedAt: new Date() } });
+      await logActivity({ action: "archived", entity: "task", entityId: task.id, summary: `archived ticket ${task.title}`, userId: context.userId, taskId: task.id });
+      return { success: true, data: { ticket: `#SR-${task.number}`, title: task.title, archived: true, reversible: "The record is kept; nothing was deleted." } };
+    },
+  },
+  {
+    id: "delete_contact",
+    name: "Delete Contact",
+    description:
+      "Permanently deletes a contact record. This cannot be undone, so it always needs a person to approve it. Prefer archiving a ticket when the thing being removed is a task.",
+    category: "contacts",
+    riskClass: "CLASS_C",
+    requiresApproval: true,
+    explicitApproval: true,
+    inputSchema: { contactId: "string", confirmEmail: "string — the contact's email, repeated, to confirm intent" },
+    async execute(input: { contactId: string; confirmEmail?: string }) {
+      const contact = await db.contact.findUnique({
+        where: { id: input.contactId },
+        select: { id: true, firstName: true, lastName: true, email: true },
+      });
+      if (!contact) return { success: false, error: "No contact with that id." };
+      if (!contact.email || (input.confirmEmail ?? "").toLowerCase() !== contact.email.toLowerCase()) {
+        return { success: false, error: `Repeat the contact's email (${contact.email ?? "none on file"}) to confirm the deletion.` };
+      }
+      await db.contact.delete({ where: { id: contact.id } });
+      return { success: true, data: { deleted: `${contact.firstName} ${contact.lastName}`, note: "Permanently removed." } };
+    },
+  },
   {
     id: "update_task",
     name: "Update Ticket",
@@ -935,17 +1025,21 @@ export const CRM_TOOLS: ToolDefinition[] = [
     requiresApproval: true,
     inputSchema: {
       name: "string",
-      cron: "string — five-field cron, e.g. '0 9 * * 1-5' for 9am on weekdays",
+      cron: "string — five-field cron for a schedule, e.g. '0 9 * * 1-5'; omit when triggering on email",
       agentSlug: "string — e.g. research, sales, communication",
       instructions: "string — what the agent should do on each run",
+      triggerWhenEmailsFrom: "string — optional: run when mail arrives from these addresses (comma separated) instead of on a clock",
     },
-    async execute(input: { name: string; cron: string; agentSlug: string; instructions: string }, context: ToolExecutionContext) {
+    async execute(input: { name: string; cron: string; agentSlug: string; instructions: string; triggerWhenEmailsFrom?: string }, context: ToolExecutionContext) {
+      const onEmail = Boolean(input.triggerWhenEmailsFrom?.trim());
       const result = await createRoutine({
         name: input.name,
         cron: input.cron,
         agentSlug: input.agentSlug,
         instructions: input.instructions,
         userId: context.userId,
+        triggerType: onEmail ? "EMAIL" : "SCHEDULE",
+        emailSenders: input.triggerWhenEmailsFrom,
       });
       if (!result.ok) return { success: false, error: result.error };
       const routine = result.routine;

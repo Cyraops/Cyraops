@@ -195,6 +195,7 @@ model User {
   pages                   Page[]               @relation("UserPages")
   intakeTokens            IntakeToken[]        @relation("UserIntakeTokens")
   taskAssignments         TaskAssignee[]       @relation("UserTaskAssignments")
+  createdCalendarEvents CalendarEvent[] @relation("CreatedCalendarEvents")
 }
 
 /// A bearer secret that lets an outside system create leads without a session.
@@ -562,6 +563,28 @@ model CallParticipant {
   @@unique([callSessionId, userId])
   @@index([userId, status])
   @@index([callSessionId, status])
+}
+
+
+/// A meeting that is not a task: what the calendar needs to exist as its own
+/// thing. Tasks show up as due dates; this is for "put a call on Thursday".
+model CalendarEvent {
+  id        String   @id @default(cuid())
+  title     String
+  notes     String   @default("")
+  location  String?
+  startsAt  DateTime
+  endsAt    DateTime
+  /// Comma separated addresses. Kept as text because an attendee need not be a
+  /// user in this workspace.
+  attendees String   @default("")
+  creatorId String
+  archivedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  creator   User     @relation("CreatedCalendarEvents", fields: [creatorId], references: [id])
+
+  @@index([startsAt])
 }
 
 model CallEvent {
