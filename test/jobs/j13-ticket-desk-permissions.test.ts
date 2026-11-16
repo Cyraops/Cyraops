@@ -101,7 +101,37 @@ test("J13: closing stamps the time, reopening clears it", async () => {
   assert.equal((await db.task.findUniqueOrThrow({ where: { id: ticket.id } })).closedAt, null);
 });
 
-test("J13: the desk cannot rename a ticket or move it to another project", async () => {
+test("J13: the desk can correct the subject and description", async () => {
+  await resetDb();
+  const { member, ticket } = await foreignTicket();
+
+  const res = await invoke(triage, `/api/tickets/${ticket.id}`, {
+    method: "PATCH",
+    userId: member.id,
+    params: { id: ticket.id },
+    body: { title: "ALARM: S3 bucket policy changes (Sydney)", description: "Requester pasted the CloudWatch email." },
+  });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+
+  const stored = await db.task.findUniqueOrThrow({ where: { id: ticket.id } });
+  assert.equal(stored.title, "ALARM: S3 bucket policy changes (Sydney)");
+  assert.equal(stored.description, "Requester pasted the CloudWatch email.");
+});
+
+test("J13: an empty subject is refused", async () => {
+  await resetDb();
+  const { member, ticket } = await foreignTicket();
+  const res = await invoke(triage, `/api/tickets/${ticket.id}`, {
+    method: "PATCH",
+    userId: member.id,
+    params: { id: ticket.id },
+    body: { title: "   " },
+  });
+  assert.equal(res.status, 400);
+  assert.equal((await db.task.findUniqueOrThrow({ where: { id: ticket.id } })).title, "ALARM: S3 bucket policy changes");
+});
+
+test("J13: the desk cannot move a ticket to another project or archive it", async () => {
   await resetDb();
   const { member, project, ticket } = await foreignTicket();
   const other = await db.project.create({ data: { name: "Elsewhere", ownerId: (await db.user.findFirstOrThrow({ where: { role: "OWNER" } })).id } });
@@ -110,14 +140,12 @@ test("J13: the desk cannot rename a ticket or move it to another project", async
     method: "PATCH",
     userId: member.id,
     params: { id: ticket.id },
-    body: { title: "hijacked", description: "rewritten", projectId: other.id, archive: true },
+    body: { projectId: other.id, archive: true },
   });
-  // Unknown keys are stripped, so this succeeds as a no-op rather than silently editing.
+  // Unknown keys are stripped, so this succeeds as a no-op rather than moving the task.
   assert.ok([200, 400].includes(res.status));
 
   const stored = await db.task.findUniqueOrThrow({ where: { id: ticket.id } });
-  assert.equal(stored.title, "ALARM: S3 bucket policy changes");
-  assert.equal(stored.description, "");
   assert.equal(stored.projectId, project.id);
   assert.equal(stored.archivedAt, null);
 });

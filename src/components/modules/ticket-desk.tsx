@@ -12,6 +12,7 @@ import {
   Clock,
   Loader2,
   MessageSquare,
+  Pencil,
   Plus,
   Search,
   ShieldCheck,
@@ -131,6 +132,9 @@ export function TicketDesk() {
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftDescription, setDraftDescription] = useState("");
 
   const load = useCallback(async () => {
     const [list, people, pending, projects] = await Promise.all([
@@ -151,6 +155,12 @@ export function TicketDesk() {
   }, [load]);
 
   const selected = tickets.find((t) => t.id === selectedId) ?? null;
+
+  useEffect(() => {
+    setEditing(false);
+    setDraftTitle(selected?.title ?? "");
+    setDraftDescription(selected?.description ?? "");
+  }, [selected?.id, selected?.title, selected?.description]);
 
   useEffect(() => {
     setResolution(selected?.resolution ?? "");
@@ -315,6 +325,33 @@ export function TicketDesk() {
     }
   };
 
+  /** Edit the subject and description in place, then return to reading mode. */
+  const saveEdit = async () => {
+    if (!selected) return;
+    const title = draftTitle.trim();
+    if (!title) {
+      toast("A ticket needs a subject", "error");
+      return;
+    }
+    setSaving("edit");
+    try {
+      const res = await fetch(`/api/tickets/${selected.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description: draftDescription }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not save the ticket");
+      setTickets((prev) => prev.map((t) => (t.id === selected.id ? { ...t, title, description: draftDescription } : t)));
+      setEditing(false);
+      toast("Ticket updated");
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "Could not save the ticket", "error");
+    } finally {
+      setSaving("");
+    }
+  };
+
   const closeTicket = async () => {
     if (!selected) return;
     const ok = await patch(selected.id, { status: "DONE", resolution }, "close");
@@ -360,7 +397,43 @@ export function TicketDesk() {
             {/* The conversation */}
             <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface)]">
               <header className="border-b border-[var(--border)] px-5 py-4">
-                <h1 className="text-lg font-bold leading-snug">{selected.title}</h1>
+                {editing ? (
+                <div className="flex items-start gap-2">
+                  <input
+                    value={draftTitle}
+                    onChange={(event) => setDraftTitle(event.target.value)}
+                    aria-label="Ticket subject"
+                    maxLength={180}
+                    autoFocus
+                    className="h-9 min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 text-base font-bold outline-none focus:border-accent"
+                  />
+                  <Button onClick={() => void saveEdit()} disabled={saving === "edit"} className="h-9 shrink-0">
+                    {saving === "edit" ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />} Save
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="h-9 shrink-0"
+                    onClick={() => {
+                      setEditing(false);
+                      setDraftTitle(selected.title);
+                      setDraftDescription(selected.description);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between gap-3">
+                  <h1 className="min-w-0 text-lg font-bold leading-snug">{selected.title}</h1>
+                  <button
+                    onClick={() => setEditing(true)}
+                    aria-label="Edit ticket"
+                    className="mt-0.5 flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] px-2 text-caption font-semibold text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
+                  >
+                    <Pencil size={12} /> Edit
+                  </button>
+                </div>
+              )}
                 <p className="mt-1 text-caption text-[var(--muted)]">
                   <span className="font-semibold text-[var(--text)]">{selected.requesterName || selected.creator?.name || "Unknown"}</span>
                   {" reported "}
@@ -390,7 +463,18 @@ export function TicketDesk() {
                 {tab === "details" && (
                   <section>
                     <h2 className="mb-1 text-[10px] font-bold uppercase tracking-widest text-[var(--muted)]">Description</h2>
-                    <p className="whitespace-pre-wrap text-meta leading-relaxed">{selected.description || "No description."}</p>
+                    {editing ? (
+                      <textarea
+                        value={draftDescription}
+                        onChange={(event) => setDraftDescription(event.target.value)}
+                        rows={10}
+                        aria-label="Ticket description"
+                        placeholder="What the requester reported…"
+                        className="w-full rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3 text-meta leading-relaxed outline-none focus:border-accent"
+                      />
+                    ) : (
+                      <p className="whitespace-pre-wrap text-meta leading-relaxed">{selected.description || "No description."}</p>
+                    )}
                     {selected.project && (
                       <p className="mt-4 flex items-center gap-1 text-[10px] text-[var(--muted)]">
                         <ChevronRight size={10} /> Project: {selected.project.name}

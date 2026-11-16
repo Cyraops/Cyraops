@@ -26,6 +26,11 @@ import { listTaskAssignees, normaliseAssigneeSet, setTaskAssignees } from "@/lib
 type Context = { params: Promise<{ id: string }> };
 
 const triageSchema = z.object({
+  // Correcting a ticket is part of triage: the subject is often wrong because the
+  // requester wrote it in an email. Moving it between projects and archiving stay
+  // project-scoped, on /api/tasks/:id.
+  title: z.string().trim().min(1).max(180).optional(),
+  description: z.string().max(10000).optional(),
   status: taskStatusSchema.optional(),
   priority: prioritySchema.optional(),
   kind: taskKindSchema.nullable().optional(),
@@ -74,6 +79,8 @@ export async function PATCH(request: NextRequest, context: Context) {
   const updated = await db.task.update({
     where: { id },
     data: {
+      ...(data.title !== undefined ? { title: data.title } : {}),
+      ...(data.description !== undefined ? { description: data.description } : {}),
       ...(data.status !== undefined ? { status: data.status } : {}),
       ...(data.priority !== undefined ? { priority: data.priority } : {}),
       ...(data.kind !== undefined ? { kind: data.kind } : {}),
@@ -92,6 +99,7 @@ export async function PATCH(request: NextRequest, context: Context) {
       id: true,
       number: true,
       title: true,
+      description: true,
       status: true,
       priority: true,
       kind: true,
