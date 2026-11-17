@@ -78,6 +78,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const submitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const silentRoundsRef = useRef(0);
   /** What Chrome says it is hearing — the only way to tell silence from breakage. */
   const [micStatus, setMicStatus] = useState("mic off");
@@ -179,6 +180,8 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   }, [conversationId]);
 
   const stopRecognition = useCallback(() => {
+    if (submitTimerRef.current) clearTimeout(submitTimerRef.current);
+    submitTimerRef.current = null;
     try {
       recognitionRef.current?.stop();
     } catch {
@@ -380,10 +383,26 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     const recognition = new Ctor();
     recognition.lang = navigator.language?.toLowerCase().startsWith("hi") ? "hi-IN" : SPEECH_LANG;
     recognition.interimResults = true;
-    recognition.continuous = false;
+    // Continuous, so a breath in the middle of a sentence does not end the turn.
+    // Chrome stops a non-continuous recognizer at the first pause, which cut
+    // people off mid-sentence; now we decide when the sentence is over.
+    recognition.continuous = true;
 
     let finalText = "";
     let lastInterim = "";
+
+    /** Submit once the speaking has actually stopped, not at every breath. */
+    const armSubmit = () => {
+      if (submitTimerRef.current) clearTimeout(submitTimerRef.current);
+      submitTimerRef.current = setTimeout(() => {
+        submitTimerRef.current = null;
+        if (!activeRef.current || phaseRef.current !== "listening") return;
+        if (recognitionRef.current !== recognition) return;
+        const said = (finalText || lastInterim).trim();
+        if (!said) return;
+        void ask(said);
+      }, 1500);
+    };
 
     // Chrome reports its audio pipeline through these events: they separate
     // "microphone never opened" from "microphone open, no sound" from
@@ -411,6 +430,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       silentRoundsRef.current = 0;
       setHeard((finalText || interim).trim());
       setPersonPulseAt(Date.now());
+      armSubmit();
     };
 
     recognition.onerror = (event: any) => {
@@ -424,11 +444,11 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
         return;
       }
       if (reason === "no-speech") {
-        // Chrome gives up after a few seconds of quiet. That is a pause, not a
-        // fault: keep listening and only speak up if it happens repeatedly.
+        // With continuous listening this means the microphone carried no speech
+        // at all for a long stretch, which is worth mentioning after a while.
         silentRoundsRef.current += 1;
         note("mic open, no sound yet");
-        if (silentRoundsRef.current >= 4) {
+        if (silentRoundsRef.current >= 3) {
           setError(
             "Your microphone is open but I'm not hearing anything. Check which input device Chrome is using, then tap the planet to try again."
           );
