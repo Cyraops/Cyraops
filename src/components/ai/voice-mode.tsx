@@ -5,6 +5,7 @@ import { CornerDownLeft, Loader2, Paperclip, PhoneOff, Volume2, VolumeX, X } fro
 import { VoiceEarth, type EarthPhase } from "./voice-earth";
 import { stripToolMarkup } from "@/lib/ai/tool-markup";
 import { availableGenders, pickVoice, type VoiceGender } from "@/lib/ai/voice/preferred-voices";
+import { recordUtterance, toWav } from "@/lib/ai/voice/recorder";
 
 type Phase = "idle" | "listening" | "thinking" | "speaking" | "error";
 
@@ -13,11 +14,7 @@ interface VoiceModeProps {
   conversationId?: string;
   onConversation?: (id: string) => void;
   onExit: () => void;
-  /**
-   * The assistant asked for approval. Voice cannot render the card, so it hands
-   * the proposed action to the chat, which can.
-   */
-  onApprovalRequired?: (action: { id: string; toolName: string; summary?: string; reason?: string; canAlwaysAllow?: boolean }) => void;
+
 }
 
 interface Turn {
@@ -55,7 +52,7 @@ function plain(text: string): string {
  * as a scrolling transcript so you can read what was said, scroll back through
  * earlier turns, or type (and attach a file) instead of speaking.
  */
-export function VoiceMode({ assistantId, conversationId, onConversation, onExit, onApprovalRequired }: VoiceModeProps) {
+export function VoiceMode({ assistantId, conversationId, onConversation, onExit }: VoiceModeProps) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [heard, setHeard] = useState("");
   const [error, setError] = useState("");
@@ -83,6 +80,10 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   /** What Chrome says it is hearing — the only way to tell silence from breakage. */
   const [micStatus, setMicStatus] = useState("mic off");
   const [hostedVoice, setHostedVoice] = useState<null | "deepseek" | "openai" | "elevenlabs">(null);
+  const [serverAsr, setServerAsr] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState<{ id: string; toolName: string; summary: string } | null>(null);
+  const asrAvailableRef = useRef(false);
+  const pendingApprovalRef = useRef<string | null>(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
   const [speakingChunks, setSpeakingChunks] = useState(false);
@@ -128,6 +129,16 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     load();
     window.speechSynthesis.addEventListener?.("voiceschanged", load);
     return () => window.speechSynthesis.removeEventListener?.("voiceschanged", load);
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const data = await fetch("/api/assistant/asr")
+        .then((response) => response.json())
+        .catch(() => ({}));
+      asrAvailableRef.current = Boolean(data?.available);
+      setServerAsr(Boolean(data?.available));
+    })();
   }, []);
 
   useEffect(() => {
@@ -368,8 +379,67 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     [pump, stopSpeaking]
   );
 
+  /**
+   * Listen by recording, then let DeepSeek transcribe.
+   *
+   * The browser's recognizer mangles accents; this records wherever speech is
+   * detected, sends one WAV, and gets back the words. The browser path below is
+   * kept for deployments without a transcription key.
+   */
+  const listenWithServerAsr = useCallback(async () => {
+    if (!activeRef.current) return;
+    setPhaseSafe("listening");
+    setHeard("");
+    setError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const { blob, hadSpeech } = await recordUtterance(stream, { silenceMs: 1300, maxUtteranceMs: 30000 });
+      stream.getTracks().forEach((track) => track.stop());
+      if (!activeRef.current) return;
+
+      if (!hadSpeech || !blob) {
+        // Nothing said: keep listening rather than declaring a fault on the
+        // first quiet moment.
+        silentRoundsRef.current += 1;
+        setMicStatus("mic open, no sound yet");
+        if (silentRoundsRef.current >= 3) {
+          setError("Your microphone is open but I'm not hearing anything. Check which input device Chrome is using, then tap the planet to try again.");
+          setPhaseSafe("error");
+          return;
+        }
+        void listenWithServerAsr();
+        return;
+      }
+
+      silentRoundsRef.current = 0;
+      setPhaseSafe("thinking");
+      const wav = await toWav(blob);
+      const form = new FormData();
+      form.append("file", wav, "speech.wav");
+      const response = await fetch("/api/assistant/asr", { method: "POST", body: form });
+      const data = await response.json().catch(() => ({}));
+      if (!activeRef.current) return;
+      const said = String(data?.text ?? "").trim();
+      if (!said) {
+        setError("I could not make out any words. Try again a little closer to the microphone.");
+        setPhaseSafe("error");
+        return;
+      }
+      void ask(said);
+    } catch (caught) {
+      if (!activeRef.current) return;
+      setError((caught as Error)?.message || "Could not record from the microphone.");
+      setPhaseSafe("error");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setPhaseSafe]);
+
   const listen = useCallback(() => {
     if (!activeRef.current) return;
+    if (asrAvailableRef.current) {
+      void listenWithServerAsr();
+      return;
+    }
     // Chrome allows a single recognizer per page: whichever starts aborts the
     // other with 'aborted'. The barge-in recognizer must therefore be stopped
     // before the listening one starts, or listening dies the moment it begins.
@@ -589,11 +659,14 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
         setStreamingReply("");
         if (reply.trim()) appendTurn("assistant", reply);
 
-        // A tool needs a person: voice cannot approve it, so hand back to chat.
+        // A tool needs a person. Ask here rather than throwing the person out of
+        // the voice screen: the card appears above the composer and the
+        // conversation carries on once it is answered.
         if (pending) {
-          setError(`${pending.toolName} needs your approval — back to the chat to approve it.`);
-          setPhaseSafe("error");
-          onApprovalRequired?.(pending);
+          pendingApprovalRef.current = pending.id;
+          setPendingApproval({ id: pending.id, toolName: pending.toolName, summary: pending.summary ?? pending.toolName });
+          setPhaseSafe("idle");
+          enqueueSpeech(`${pending.toolName} needs your approval before I can do that.`);
           return;
         }
 
@@ -624,7 +697,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
         if (streamAbortRef.current === controller) streamAbortRef.current = null;
       }
     },
-    [appendTurn, armWatchdog, assistantId, clearWatchdog, enqueueSpeech, listen, onApprovalRequired, onConversation, setPhaseSafe, stopRecognition]
+    [appendTurn, armWatchdog, assistantId, clearWatchdog, enqueueSpeech, listen, onConversation, setPhaseSafe, stopRecognition]
   );
 
   /**
@@ -635,7 +708,9 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
    */
   const start = useCallback(() => {
     setError("");
-    armWatchdog();
+    // With server transcription the recording decides when it ends; the watchdog
+    // exists for the browser recognizer, which can fail silently.
+    if (!asrAvailableRef.current) armWatchdog();
     listen();
     void (async () => {
       try {
@@ -806,6 +881,43 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
+  const decideApproval = useCallback(
+    async (approve: boolean) => {
+      const actionId = pendingApprovalRef.current;
+      if (!actionId) return;
+      pendingApprovalRef.current = null;
+      setPendingApproval(null);
+      setPhaseSafe("thinking");
+      try {
+        const response = await fetch("/api/assistant/actions/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ actionId, approve }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (approve && (data.status === "FAILED" || data.error || data.result?.error)) {
+          const reason = data.result?.error || data.error || "That action could not be completed.";
+          setError(String(reason));
+          appendTurn("assistant", `That didn't work: ${reason}`);
+        } else {
+          appendTurn(
+            "assistant",
+            approve
+              ? `✅ ${data.result?.data?.message ?? data.result?.data?.ticket ?? `${data.toolName ?? "Done"}`}`
+              : "↩️ Rejected — nothing was changed."
+          );
+        }
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Could not confirm that action.");
+      } finally {
+        armWatchdog();
+        listen();
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [appendTurn, armWatchdog, listen, setPhaseSafe]
+  );
+
   const onPlanetTap = () => {
     if (phaseRef.current === "idle") {
       start();
@@ -933,6 +1045,30 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
           )}
         </div>
       </div>
+
+      {pendingApproval && (
+        <div className="mx-3 mb-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2">
+          <p className="text-caption font-bold uppercase tracking-wide text-amber-700 dark:text-amber-400">Approval required</p>
+          <p className="mt-0.5 text-meta text-[var(--text)]">{pendingApproval.summary}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void decideApproval(true)}
+              className="rounded-lg bg-emerald-600 px-3 py-1.5 text-caption font-semibold text-white transition hover:bg-emerald-700"
+            >
+              Approve & run
+            </button>
+            <button
+              type="button"
+              onClick={() => void decideApproval(false)}
+              className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-caption font-semibold text-[var(--muted)] transition hover:bg-[var(--hover)]"
+            >
+              Reject
+            </button>
+            <span className="text-caption text-[var(--muted)]">or say &ldquo;approve&rdquo;</span>
+          </div>
+        </div>
+      )}
 
       {/* Composer: type, attach, mute, end, send. */}
       <form onSubmit={submitDraft} className="shrink-0 border-t border-[var(--border)] px-3 py-2">
