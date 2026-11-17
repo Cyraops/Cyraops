@@ -82,7 +82,6 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const silentRoundsRef = useRef(0);
   /** What Chrome says it is hearing — the only way to tell silence from breakage. */
   const [micStatus, setMicStatus] = useState("mic off");
-  const [micTest, setMicTest] = useState<{ state: "idle" | "running" | "done"; level?: number; text?: string }>({ state: "idle" });
   const [hostedVoice, setHostedVoice] = useState<null | "deepseek" | "openai" | "elevenlabs">(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
@@ -735,56 +734,6 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
 
-  /**
-   * Independent microphone check.
-   *
-   * Recording with MediaRecorder and measuring the samples answers "is any audio
-   * reaching this page?" without involving the speech service, which is the one
-   * thing that cannot be distinguished from silence any other way.
-   */
-  const testMicrophone = useCallback(async () => {
-    setMicTest({ state: "running" });
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-      const stopped = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
-      recorder.start();
-      await new Promise((resolve) => setTimeout(resolve, 2500));
-      recorder.stop();
-      await stopped;
-      stream.getTracks().forEach((track) => track.stop());
-
-      const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/webm" });
-      const buffer = await blob.arrayBuffer();
-      const context = new OfflineAudioContext(1, 1, 48000);
-      const decoded = await context.decodeAudioData(buffer.slice(0));
-      const samples = decoded.getChannelData(0);
-      let peak = 0;
-      let sum = 0;
-      for (let i = 0; i < samples.length; i += 1) {
-        const value = Math.abs(samples[i]);
-        peak = Math.max(peak, value);
-        sum += value * value;
-      }
-      const rms = Math.sqrt(sum / Math.max(1, samples.length));
-      setMicTest({
-        state: "done",
-        level: rms,
-        text:
-          peak < 0.01
-            ? `Recorded ${decoded.duration.toFixed(1)}s but it was silent (peak ${peak.toFixed(3)}) — Chrome is not receiving your microphone.`
-            : `Recorded ${decoded.duration.toFixed(1)}s with sound (peak ${peak.toFixed(2)}, rms ${rms.toFixed(3)}) — the microphone works.`,
-      });
-    } catch (caught) {
-      setMicTest({
-        state: "done",
-        text: `Could not record: ${(caught as Error)?.name ?? "error"}. Check the microphone permission for this site.`,
-      });
-    }
-  }, []);
-
   const onPlanetTap = () => {
     if (phaseRef.current === "idle") {
       start();
@@ -864,32 +813,6 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
             {micStatus}
           </p>
         )}
-        {(phase === "idle" || phase === "error") && (
-          <p
-            className={`max-w-[180px] rounded-full px-2 py-0.5 text-center text-caption font-semibold backdrop-blur-sm ${
-              phase === "error"
-                ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
-                : "bg-[var(--surface)]/85 text-[var(--muted)]"
-            }`}
-          >
-            {phase === "error" ? "Tap the planet to retry" : label}
-          </p>
-        )}
-        {(phase === "idle" || phase === "error") && (
-          <span className="flex flex-col items-center gap-1">
-            <button
-              type="button"
-              onClick={() => void testMicrophone()}
-              className="pointer-events-auto rounded-full border border-[var(--border)] bg-[var(--surface)]/85 px-2 py-0.5 text-caption font-semibold text-[var(--muted)] backdrop-blur-sm transition hover:text-[var(--text)]"
-            >
-              {micTest.state === "running" ? "Listening to the mic…" : "Test microphone"}
-            </button>
-            {micTest.state === "done" && micTest.text && (
-              <span className="max-w-[220px] text-center text-caption leading-snug text-[var(--muted)]">{micTest.text}</span>
-            )}
-          </span>
-        )}
-
         {/* While it is running, the planet's own motion shows the state; the words
             stay for anyone using a screen reader. */}
         <span className="sr-only" role="status" aria-live="polite">
