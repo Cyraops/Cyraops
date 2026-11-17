@@ -9,6 +9,7 @@ afterEach(() => {
 });
 
 function withKeys(keys: Record<string, string | undefined>) {
+  delete process.env.DEEPSEEK_API_KEY;
   delete process.env.OPENAI_API_KEY;
   delete process.env.ELEVENLABS_API_KEY;
   for (const [key, value] of Object.entries(keys)) if (value !== undefined) process.env[key] = value;
@@ -19,9 +20,34 @@ test("no key means no hosted voice", () => {
   assert.equal(speechProvider(), null);
 });
 
-test("OpenAI wins when both keys exist", () => {
+test("DeepSeek is preferred because we already hold that key", () => {
+  withKeys({ DEEPSEEK_API_KEY: "ds-test", OPENAI_API_KEY: "sk-test", ELEVENLABS_API_KEY: "el-test" });
+  assert.equal(speechProvider(), "deepseek");
+});
+
+test("OpenAI is the next choice when DeepSeek is absent", () => {
   withKeys({ OPENAI_API_KEY: "sk-test", ELEVENLABS_API_KEY: "el-test" });
   assert.equal(speechProvider(), "openai");
+});
+
+test("DeepSeek speaks with stella and tide", async () => {
+  withKeys({ DEEPSEEK_API_KEY: "ds-test" });
+  const calls: any[] = [];
+  globalThis.fetch = (async (url: string, init: any) => {
+    calls.push({ url, body: JSON.parse(init.body), auth: init.headers.Authorization });
+    return new Response(new Uint8Array([82, 73, 70, 70]), { status: 200 });
+  }) as any;
+
+  const female = await synthesizeSpeech("Hello.", "female");
+  await synthesizeSpeech("Hello.", "male");
+
+  assert.equal(calls[0].url.split("deepseek.com")[1], "/v1/tools/tts");
+  assert.equal(calls[0].body.voice_id, "stella");
+  assert.equal(calls[1].body.voice_id, "tide");
+  assert.equal(calls[0].body.format, "wav");
+  assert.equal(calls[0].auth, "Bearer ds-test");
+  assert.equal(female.contentType, "audio/wav");
+  assert.equal(female.provider, "deepseek");
 });
 
 test("OpenAI request names a female or male voice and returns the audio", async () => {

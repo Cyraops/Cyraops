@@ -82,7 +82,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   /** What Chrome says it is hearing — the only way to tell silence from breakage. */
   const [micStatus, setMicStatus] = useState("mic off");
   const [micTest, setMicTest] = useState<{ state: "idle" | "running" | "done"; level?: number; text?: string }>({ state: "idle" });
-  const [hostedVoice, setHostedVoice] = useState<null | "openai" | "elevenlabs">(null);
+  const [hostedVoice, setHostedVoice] = useState<null | "deepseek" | "openai" | "elevenlabs">(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
   const [speakingChunks, setSpeakingChunks] = useState(false);
@@ -134,7 +134,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       const data = await fetch("/api/assistant/tts")
         .then((response) => response.json())
         .catch(() => ({}));
-      const provider = data?.provider === "openai" || data?.provider === "elevenlabs" ? data.provider : null;
+      const provider = ["deepseek", "openai", "elevenlabs"].includes(data?.provider) ? (data.provider as "deepseek" | "openai" | "elevenlabs") : null;
       serverVoiceRef.current = Boolean(data?.available && provider);
       setHostedVoice(data?.available && provider ? provider : null);
     })();

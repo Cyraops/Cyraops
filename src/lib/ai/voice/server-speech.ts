@@ -15,8 +15,17 @@ export type SpeechGender = "female" | "male";
 export interface SynthesizedSpeech {
   audio: Buffer;
   contentType: string;
-  provider: "openai" | "elevenlabs";
+  provider: "deepseek" | "openai" | "elevenlabs";
 }
+
+/**
+ * DeepSeek speaks too, as of its 2026 tool APIs, and we already hold that key —
+ * so it is tried first. Stella is the female voice, Tide the male one.
+ */
+const DEEPSEEK_VOICES: Record<SpeechGender, string> = {
+  female: process.env.DEEPSEEK_TTS_VOICE_FEMALE?.trim() || "stella",
+  male: process.env.DEEPSEEK_TTS_VOICE_MALE?.trim() || "tide",
+};
 
 const OPENAI_VOICES: Record<SpeechGender, string> = {
   female: process.env.OPENAI_TTS_VOICE_FEMALE?.trim() || "nova",
@@ -29,10 +38,11 @@ const ELEVENLABS_VOICES: Record<SpeechGender, string> = {
   male: process.env.ELEVENLABS_VOICE_MALE?.trim() || "pNInz6obpgDQGcFmaJgB",
 };
 
-export type SpeechProvider = "openai" | "elevenlabs" | null;
+export type SpeechProvider = "deepseek" | "openai" | "elevenlabs" | null;
 
 /** Which provider this deployment can use, if any. */
 export function speechProvider(): SpeechProvider {
+  if (process.env.DEEPSEEK_API_KEY?.trim()) return "deepseek";
   if (process.env.OPENAI_API_KEY?.trim()) return "openai";
   if (process.env.ELEVENLABS_API_KEY?.trim()) return "elevenlabs";
   return null;
@@ -46,6 +56,28 @@ export async function synthesizeSpeech(text: string, gender: SpeechGender): Prom
   if (!provider) throw new Error("No speech provider is configured");
   const input = text.trim().slice(0, MAX_SPEECH_CHARS);
   if (!input) throw new Error("Nothing to say");
+
+  if (provider === "deepseek") {
+    const base = (process.env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com/v1").replace(/\/$/, "");
+    const response = await fetch(`${base}/tools/tts`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text: input,
+        voice_id: DEEPSEEK_VOICES[gender],
+        format: "wav",
+        filter_markdown: true,
+      }),
+    });
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      throw new Error(`Speech provider refused (${response.status}) ${detail.slice(0, 160)}`);
+    }
+    return { audio: Buffer.from(await response.arrayBuffer()), contentType: "audio/wav", provider };
+  }
 
   if (provider === "openai") {
     const response = await fetch("https://api.openai.com/v1/audio/speech", {
