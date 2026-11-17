@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CornerDownLeft, Loader2, Paperclip, PhoneOff, Volume2, VolumeX, X } from "lucide-react";
 import { VoiceEarth, type EarthPhase } from "./voice-earth";
 import { stripToolMarkup } from "@/lib/ai/tool-markup";
+import { availableGenders, pickVoice, type VoiceGender } from "@/lib/ai/voice/preferred-voices";
 
 type Phase = "idle" | "listening" | "thinking" | "speaking" | "error";
 
@@ -82,10 +83,10 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const [micStatus, setMicStatus] = useState("mic off");
   const [micTest, setMicTest] = useState<{ state: "idle" | "running" | "done"; level?: number; text?: string }>({ state: "idle" });
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
-  const [voiceName, setVoiceName] = useState("");
+  const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
   const [speakingChunks, setSpeakingChunks] = useState(false);
   const micStatusRef = useRef("mic off");
-  const voiceRef = useRef<string>("");
+  const genderRef = useRef<VoiceGender>("female");
   const queueRef = useRef<string[]>([]);
   const pumpingRef = useRef(false);
   const bargeRef = useRef<any>(null);
@@ -97,49 +98,33 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     setPhase(next);
   }, []);
 
-  /**
-   * Voice quality matters more than anything else here. Browsers ship a mix of
-   * old formant voices and newer neural ones; "Premium", "Enhanced", "Neural"
-   * and Siri voices sound human, the rest sound like 2005.
-   */
-  const qualityRank = (voice: SpeechSynthesisVoice) =>
-    /premium|enhanced|neural|natural|siri/i.test(voice.name) ? 0 : /google/i.test(voice.name) ? 1 : 2;
-
-  const pickVoice = useCallback((list: SpeechSynthesisVoice[], wanted: string) => {
-    if (wanted) {
-      const exact = list.find((voice) => voice.name === wanted);
-      if (exact) return exact;
-    }
-    const indian = list.filter((voice) => voice.lang === SPEECH_LANG).sort((a, b) => qualityRank(a) - qualityRank(b));
-    if (indian.length) return indian[0];
-    const english = list.filter((voice) => /^en/i.test(voice.lang)).sort((a, b) => qualityRank(a) - qualityRank(b));
-    return english[0] ?? list[0];
-  }, []);
+  /** The voice to use: the most natural one of the chosen gender. */
+  const chosenVoice = useCallback(
+    (gender: VoiceGender) => pickVoice(voices.map((voice) => ({ name: voice.name, lang: voice.lang })), gender),
+    [voices]
+  );
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
     const load = () => {
-      const list = (window.speechSynthesis.getVoices() ?? [])
-        .filter((voice) => /^(en|hi)/i.test(voice.lang))
-        .sort((a, b) => qualityRank(a) - qualityRank(b) || a.name.localeCompare(b.name));
+      const list = (window.speechSynthesis.getVoices() ?? []).filter((voice) => /^(en|hi)/i.test(voice.lang));
       if (!list.length) return;
-      setVoices(list);
-      let stored = "";
+      setVoices(list as SpeechSynthesisVoice[]);
+      let stored: string | null = null;
       try {
-        stored = window.localStorage.getItem("cyraops:voice") ?? "";
+        stored = window.localStorage.getItem("cyraops:voiceGender");
       } catch {
-        stored = "";
+        stored = null;
       }
-      const chosen = pickVoice(list, stored || voiceRef.current);
-      if (chosen) {
-        voiceRef.current = chosen.name;
-        setVoiceName(chosen.name);
-      }
+      const genders = availableGenders(list);
+      const next: VoiceGender = stored === "male" || stored === "female" ? stored : genders.includes("female") ? "female" : genders[0] ?? "female";
+      setVoiceGender(next);
+      genderRef.current = next;
     };
     load();
     window.speechSynthesis.addEventListener?.("voiceschanged", load);
     return () => window.speechSynthesis.removeEventListener?.("voiceschanged", load);
-  }, [pickVoice]);
+  }, []);
 
   useEffect(() => {
     mutedRef.current = muted;
@@ -236,7 +221,8 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     setPhaseSafe("speaking");
 
     const utterance = new SpeechSynthesisUtterance(next);
-    const chosen = voices.find((voice) => voice.name === voiceRef.current) ?? pickVoice(voices, voiceRef.current);
+    const wanted = chosenVoice(genderRef.current);
+    const chosen = wanted ? voices.find((voice) => voice.name === wanted.name) ?? null : null;
     try {
       if (chosen) utterance.voice = chosen;
     } catch {
@@ -244,7 +230,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     }
     utterance.lang = chosen?.lang || SPEECH_LANG;
     utterance.rate = 1.0;
-    utterance.pitch = 1.0;
+    utterance.pitch = genderRef.current === "male" ? 0.9 : 1.05;
     utterance.onboundary = () => setSpeakPulseAt(Date.now());
     const advance = () => {
       pumpingRef.current = false;
@@ -255,7 +241,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     utterance.onend = advance;
     utterance.onerror = advance;
     window.speechSynthesis.speak(utterance);
-  }, [pickVoice, setPhaseSafe, voices]);
+  }, [chosenVoice, setPhaseSafe, voices]);
 
   /** Queue a sentence; the queue plays itself. */
   const enqueueSpeech = useCallback(
@@ -901,29 +887,33 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
             className="soft-scrollbar max-h-32 min-h-[38px] flex-1 resize-none rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-meta outline-none placeholder:text-[var(--muted)] focus:border-accent"
           />
 
-          {voices.length > 1 && (
-            <select
-              value={voiceName}
-              onChange={(event) => {
-                const chosen = event.target.value;
-                setVoiceName(chosen);
-                voiceRef.current = chosen;
-                try {
-                  window.localStorage.setItem("cyraops:voice", chosen);
-                } catch {
-                  /* storage may be unavailable */
-                }
-              }}
-              aria-label="Voice"
-              title="Voice"
-              className="h-9 max-w-[112px] shrink-0 cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-1.5 text-caption text-[var(--muted)] outline-none focus:border-accent"
-            >
-              {voices.map((voice) => (
-                <option key={voice.name} value={voice.name}>
-                  {voice.name.replace(/^(Microsoft|Google)\s+/i, "").slice(0, 22)}
-                </option>
+          {availableGenders(voices.map((voice) => ({ name: voice.name, lang: voice.lang }))).length > 1 && (
+            <span className="flex shrink-0 items-center gap-1" role="group" aria-label="Voice">
+              {(["female", "male"] as VoiceGender[]).map((gender) => (
+                <button
+                  key={gender}
+                  type="button"
+                  onClick={() => {
+                    setVoiceGender(gender);
+                    genderRef.current = gender;
+                    try {
+                      window.localStorage.setItem("cyraops:voiceGender", gender);
+                    } catch {
+                      /* storage may be unavailable */
+                    }
+                  }}
+                  aria-pressed={voiceGender === gender}
+                  title={`${gender === "female" ? "Female" : "Male"} voice`}
+                  className={`h-9 rounded-lg border px-2 text-caption font-semibold transition ${
+                    voiceGender === gender
+                      ? "border-accent bg-accent/10 text-accent"
+                      : "border-[var(--border)] text-[var(--muted)] hover:bg-[var(--hover)]"
+                  }`}
+                >
+                  {gender === "female" ? "Female" : "Male"}
+                </button>
               ))}
-            </select>
+            </span>
           )}
 
           <input
