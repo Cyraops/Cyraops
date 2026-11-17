@@ -803,7 +803,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
             <button
               type="button"
               onClick={() => void testMicrophone()}
-              className="rounded-full border border-[var(--border)] bg-[var(--surface)]/85 px-2 py-0.5 text-caption font-semibold text-[var(--muted)] backdrop-blur-sm transition hover:text-[var(--text)]"
+              className="pointer-events-auto rounded-full border border-[var(--border)] bg-[var(--surface)]/85 px-2 py-0.5 text-caption font-semibold text-[var(--muted)] backdrop-blur-sm transition hover:text-[var(--text)]"
             >
               {micTest.state === "running" ? "Listening to the mic…" : "Test microphone"}
             </button>
