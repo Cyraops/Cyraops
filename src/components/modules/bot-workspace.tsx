@@ -1247,9 +1247,12 @@ export function BotWorkspace() {
             conversationId={conversationId || undefined}
             onConversation={(id) => setConversationId(id)}
             onExit={() => setVoiceOpen(false)}
-            onApprovalRequired={() => {
-              // Voice cannot show an approval card; the chat can.
+            onApprovalRequired={(action) => {
+              // Voice cannot show the card, so the action travels with us into the
+              // chat and is rendered there — otherwise it was stranded and could
+              // never be approved.
               setVoiceOpen(false);
+              if (action) setPendingAction({ ...action, summary: action.summary ?? action.toolName });
               if (conversationId) void loadConversation(conversationId);
             }}
           />

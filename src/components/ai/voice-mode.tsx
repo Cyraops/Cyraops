@@ -11,8 +11,11 @@ interface VoiceModeProps {
   conversationId?: string;
   onConversation?: (id: string) => void;
   onExit: () => void;
-  /** The assistant asked for approval: voice cannot show a card, so hand back. */
-  onApprovalRequired?: (toolName: string) => void;
+  /**
+   * The assistant asked for approval. Voice cannot render the card, so it hands
+   * the proposed action to the chat, which can.
+   */
+  onApprovalRequired?: (action: { id: string; toolName: string; summary?: string; reason?: string; canAlwaysAllow?: boolean }) => void;
 }
 
 interface Turn {
@@ -255,7 +258,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
         const decoder = new TextDecoder();
         let buffer = "";
         let reply = "";
-        let pending: string | null = null;
+        let pending: { id: string; toolName: string; summary?: string; reason?: string; canAlwaysAllow?: boolean } | null = null;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -281,7 +284,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
                 conversationRef.current = payload.conversationId;
                 onConversation?.(payload.conversationId);
               }
-              if (payload.pendingAction) pending = payload.pendingAction.toolName ?? "an action";
+              if (payload.pendingAction) pending = payload.pendingAction;
             } else if (payload.type === "error") {
               throw new Error(payload.error || "The assistant did not answer.");
             }
@@ -293,7 +296,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
 
         // A tool needs a person: voice cannot approve it, so hand back to chat.
         if (pending) {
-          setError(`${pending} needs your approval — back to the chat to approve it.`);
+          setError(`${pending.toolName} needs your approval — back to the chat to approve it.`);
           setPhaseSafe("error");
           onApprovalRequired?.(pending);
           return;
