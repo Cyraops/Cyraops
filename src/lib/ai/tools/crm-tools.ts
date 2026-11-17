@@ -8,6 +8,7 @@ import { ToolDefinition, ToolExecutionContext } from "./types";
 import { ContactStatus, LeadStatus, DealStage, TaskStatus, Priority } from "@prisma/client";
 import { browserRuntime } from "../browser/browser-runtime";
 import { computerAct, computerSessionKey, isComputerServiceConfigured } from "../browser/computer-client";
+import { isLocalBrowserConnected } from "../browser/local-bridge";
 import { getMailboxConfig } from "@/lib/email/config";
 import { EmailService } from "@/lib/email/service";
 import { providerManager } from "../provider-manager";
@@ -1275,7 +1276,7 @@ export const CRM_TOOLS: ToolDefinition[] = [
     inputSchema: { url: "string" },
     async execute(input: { url: string }, context: ToolExecutionContext) {
       if (!input.url) return { success: false, error: "URL is required" };
-      if (isComputerServiceConfigured()) {
+      if (isComputerServiceConfigured() || isLocalBrowserConnected(context.userId ?? "")) {
         const result = await computerAct(computerSessionKey(context.userId, context.agentSlug), "navigate", { url: input.url });
         return { success: result.ok, data: result, error: result.error };
       }
@@ -1296,7 +1297,7 @@ export const CRM_TOOLS: ToolDefinition[] = [
     taintsRun: true,
     inputSchema: { selector: "string?" },
     async execute(input: { selector?: string }, context: ToolExecutionContext) {
-      if (isComputerServiceConfigured()) {
+      if (isComputerServiceConfigured() || isLocalBrowserConnected(context.userId ?? "")) {
         const result = await computerAct(computerSessionKey(context.userId, context.agentSlug), "extract");
         return { success: result.ok, data: result, error: result.error };
       }
@@ -1316,7 +1317,7 @@ export const CRM_TOOLS: ToolDefinition[] = [
     taintsRun: true,
     inputSchema: {},
     async execute(input: any, context: ToolExecutionContext) {
-      if (isComputerServiceConfigured()) {
+      if (isComputerServiceConfigured() || isLocalBrowserConnected(context.userId ?? "")) {
         const result = await computerAct(computerSessionKey(context.userId, context.agentSlug), "screenshot");
         return {
           success: result.ok,
@@ -1342,7 +1343,7 @@ export const CRM_TOOLS: ToolDefinition[] = [
     taintsRun: true,
     inputSchema: { selector: "string?", x: "number?", y: "number?" },
     async execute(input: { selector?: string; x?: number; y?: number }, context: ToolExecutionContext) {
-      if (isComputerServiceConfigured() && input.selector) {
+      if ((isComputerServiceConfigured() || isLocalBrowserConnected(context.userId ?? "")) && input.selector) {
         const result = await computerAct(computerSessionKey(context.userId, context.agentSlug), "click", { selector: input.selector });
         return { success: result.ok, data: result, error: result.error };
       }

@@ -47,16 +47,47 @@ export function computerSessionKey(userId: string, agentSlug?: string): string {
   return `${userId}:${agentSlug || "assistant"}`;
 }
 
+/**
+ * Try the person's own browser before anything hosted.
+ *
+ * The key is "userId:agent", which is how we know whose browser to ask. A hosted
+ * browser is only used when nobody is connected — that is the expensive path.
+ */
+export async function computerActLocal(
+  key: string,
+  action: ComputerAction,
+  payload: { url?: string; selector?: string; text?: string } = {}
+): Promise<ComputerResult | null> {
+  const userId = key.split(":")[0];
+  if (!userId) return null;
+  const { isLocalBrowserConnected, requestLocalAction } = await import("./local-bridge");
+  if (!isLocalBrowserConnected(userId)) return null;
+  const mapped = action === "typeText" ? "type" : action === "clickAt" ? "click" : action;
+  const allowed = ["navigate", "click", "type", "screenshot", "extract"];
+  if (!allowed.includes(mapped)) return null;
+  const result = await requestLocalAction(userId, {
+    action: mapped as "navigate" | "click" | "type" | "screenshot" | "extract",
+    url: payload.url,
+    selector: payload.selector,
+    text: payload.text,
+  });
+  return result as ComputerResult;
+}
+
 export async function computerAct(
   key: string,
   action: ComputerAction,
   payload: { url?: string; selector?: string; text?: string; deltaY?: number; x?: number; y?: number } = {}
 ): Promise<ComputerResult> {
+  // The person's own browser first: free, and already signed in to what they need.
+  const local = await computerActLocal(key, action, payload);
+  if (local) return local;
+
   if (!isComputerServiceConfigured()) {
     return {
       ok: false,
       error:
-        "Computer use is not configured on this server. Set COMPUTER_SERVICE_URL and COMPUTER_SERVICE_TOKEN to enable it.",
+        "No browser is available. Turn on 'Use my browser' on the Cyraops tab, or ask an owner to configure a hosted browser.",
     };
   }
 

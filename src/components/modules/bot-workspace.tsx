@@ -9,6 +9,7 @@ import { parseToolSteps, ToolActivity, type ToolStep } from "@/components/ai/too
 import { PagesBrowser, PagesPanel, type OpenPage, type PageMeta } from "@/components/ai/pages-panel";
 import { BrowserPanel } from "@/components/ai/browser-panel";
 import { VoiceMode } from "@/components/ai/voice-mode";
+import { LocalBrowserAgent } from "@/components/ai/local-browser-agent";
 import { CommandPalette } from "@/components/ai/command-palette";
 import { AskBlock, FileBlock, StepBlock, TextBlock, toBlocks } from "@/components/ai/blocks";
 import { BotOrb } from "@/components/ai/bot-avatar";
@@ -1796,6 +1797,7 @@ export function BotWorkspace() {
         <div id="rail-browser" className="flex shrink-0 flex-col overflow-hidden rounded-lg border border-[var(--border)]">
           <BrowserPanel embedded />
         </div>
+        <LocalBrowserAgent />
       </aside>
 
       <RoutinesModal open={routinesOpen} onClose={() => setRoutinesOpen(false)} />
