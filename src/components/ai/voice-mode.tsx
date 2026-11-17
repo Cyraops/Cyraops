@@ -93,6 +93,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const bargeRef = useRef<any>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const speechGenRef = useRef(0);
   const serverVoiceRef = useRef(false);
   const spokenRef = useRef("");
 
@@ -271,6 +272,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
 
     // Hosted voice first: same voice on every machine, nothing to install.
     if (serverVoiceRef.current && typeof window !== "undefined") {
+      const generation = speechGenRef.current;
       void (async () => {
         try {
           const response = await fetch("/api/assistant/tts", {
@@ -280,6 +282,11 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
           });
           if (!response.ok) throw new Error("speech unavailable");
           const blob = await response.blob();
+          if (generation !== speechGenRef.current) {
+            // Superseded while we were fetching: say nothing.
+            pumpingRef.current = false;
+            return;
+          }
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
           audioRef.current = audio;
@@ -323,6 +330,9 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   );
 
   const stopSpeaking = useCallback(() => {
+    // Invalidate any audio still being fetched for this answer, so a chunk that
+    // arrives late cannot start talking over the person who interrupted.
+    speechGenRef.current += 1;
     queueRef.current = [];
     pumpingRef.current = false;
     setSpeakingChunks(false);
@@ -660,12 +670,16 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   }, []);
 
   /**
-   * Barge-in: while it is talking, keep an ear open. Speaking over it stops the
-   * speech and takes the new sentence, the way a person would.
+   * Barge-in, the way a conversation works.
    *
-   * Chrome's recognizer hears the browser's own output through the speakers, so
-   * an interruption must clear two bars: at least three words, and not a repeat
-   * of what is currently being said.
+   * While it is talking, a second recognizer listens. The instant a voice is
+   * heard the speech is paused — you should never have to wait for the bot to
+   * finish a sentence it has already lost you on — and whatever you say becomes
+   * the next turn. If the "voice" turns out to be the assistant's own output
+   * through the speakers, the speech resumes where it left off.
+   *
+   * Only one recognizer can be live in Chrome, which is safe here: the listening
+   * one is stopped before speech begins.
    */
   useEffect(() => {
     if (phase !== "speaking") {
@@ -682,26 +696,53 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
 
     const recognition = new Ctor();
     recognition.lang = navigator.language?.toLowerCase().startsWith("hi") ? "hi-IN" : SPEECH_LANG;
-    recognition.interimResults = false;
-    recognition.continuous = false;
-    recognition.onresult = (event: any) => {
-      const said = String(event.results?.[0]?.[0]?.transcript ?? "").trim();
-      if (said.split(/\s+/).filter(Boolean).length < 3) return;
-      const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
-      if (normalise(spokenRef.current).includes(normalise(said))) return; // it heard itself
-      // Speech recognition is not exact, so an echo rarely matches word for word.
-      // If most of what it "heard" is what it is saying, that is the speaker.
-      const saidWords = normalise(said).split(" ").filter(Boolean);
-      const spokenWords = new Set(normalise(spokenRef.current).split(" ").filter(Boolean));
-      const overlap = saidWords.filter((word) => spokenWords.has(word)).length / Math.max(1, saidWords.length);
-      if (overlap >= 0.6) return;
+    recognition.interimResults = true;
+    recognition.continuous = true;
+
+    const normalise = (value: string) =>
+      value.toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+
+    /** Its own voice, arriving back through the microphone. */
+    const soundsLikeItself = (said: string) => {
+      const spoken = normalise(spokenRef.current);
+      const text = normalise(said);
+      if (!text) return true;
+      if (spoken.includes(text)) return true;
+      const words = text.split(" ").filter(Boolean);
+      const said_words = new Set(spoken.split(" ").filter(Boolean));
+      const overlap = words.filter((word) => said_words.has(word)).length / Math.max(1, words.length);
+      return overlap >= 0.6;
+    };
+
+    let finalText = "";
+    let lastInterim = "";
+    let ducked = false;
+    let submitTimer: ReturnType<typeof setTimeout> | null = null;
+    let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const resume = () => {
+      if (!ducked) return;
+      ducked = false;
+      void audioRef.current?.play().catch(() => {});
+    };
+
+    const submit = () => {
+      if (submitTimer) clearTimeout(submitTimer);
+      submitTimer = null;
+      const said = (finalText || lastInterim).trim();
+      finalText = "";
+      lastInterim = "";
+      if (!said || soundsLikeItself(said)) {
+        // It heard itself: carry on speaking rather than interrupting.
+        resume();
+        return;
+      }
       stopSpeaking();
       try {
         recognition.stop();
       } catch {
         /* already stopped */
       }
-      // Cut the answer that was still streaming: the person has moved on.
       try {
         streamAbortRef.current?.abort();
       } catch {
@@ -710,11 +751,39 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       inFlightRef.current = false;
       void ask(said, [], true);
     };
+
+    const armSubmit = () => {
+      if (submitTimer) clearTimeout(submitTimer);
+      submitTimer = setTimeout(submit, 1500);
+    };
+
+    recognition.onspeechstart = () => {
+      // A voice — pause immediately, decide afterwards whether it was its own.
+      if (audioRef.current && !audioRef.current.paused) {
+        audioRef.current.pause();
+        ducked = true;
+        if (resumeTimer) clearTimeout(resumeTimer);
+        resumeTimer = setTimeout(resume, 2500);
+      }
+    };
+
+    recognition.onresult = (event: any) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        if (result.isFinal) finalText += result[0].transcript;
+        else interim += result[0].transcript;
+      }
+      if (interim) lastInterim = interim;
+      if (resumeTimer) clearTimeout(resumeTimer);
+      armSubmit();
+    };
+
     recognition.onerror = () => {
       /* barge-in is opportunistic: never surface its failures */
     };
+
     bargeRef.current = recognition;
-    // A short delay stops the first syllable of our own speech from interrupting it.
     const timer = setTimeout(() => {
       if (phaseRef.current !== "speaking") return;
       try {
@@ -722,9 +791,12 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       } catch {
         /* ignore */
       }
-    }, 700);
+    }, 500);
+
     return () => {
       clearTimeout(timer);
+      if (submitTimer) clearTimeout(submitTimer);
+      if (resumeTimer) clearTimeout(resumeTimer);
       try {
         recognition.stop();
       } catch {
