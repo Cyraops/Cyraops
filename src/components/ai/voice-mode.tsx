@@ -80,6 +80,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const silentRoundsRef = useRef(0);
   /** What Chrome says it is hearing — the only way to tell silence from breakage. */
   const [micStatus, setMicStatus] = useState("mic off");
+  const [micTest, setMicTest] = useState<{ state: "idle" | "running" | "done"; level?: number; text?: string }>({ state: "idle" });
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voiceName, setVoiceName] = useState("");
   const [speakingChunks, setSpeakingChunks] = useState(false);
@@ -300,6 +301,15 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
 
   const listen = useCallback(() => {
     if (!activeRef.current) return;
+    // Chrome allows a single recognizer per page: whichever starts aborts the
+    // other with 'aborted'. The barge-in recognizer must therefore be stopped
+    // before the listening one starts, or listening dies the moment it begins.
+    try {
+      bargeRef.current?.stop();
+    } catch {
+      /* already stopped */
+    }
+    bargeRef.current = null;
     const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!Ctor) {
       setError("This browser cannot listen. Chrome or Safari work best.");
@@ -348,7 +358,14 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
 
     recognition.onerror = (event: any) => {
       const reason = event?.error ?? "";
-      if (reason === "aborted") return;
+      if (reason === "aborted") {
+        // Something else took the microphone. If we are still meant to listen,
+        // ask Chrome again rather than leaving a dead session on screen.
+        if (activeRef.current && phaseRef.current === "listening") {
+          setMicStatus("mic taken by another recognizer");
+        }
+        return;
+      }
       if (reason === "no-speech") {
         // Chrome gives up after a few seconds of quiet. That is a pause, not a
         // fault: keep listening and only speak up if it happens repeatedly.
@@ -623,6 +640,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     bargeRef.current = recognition;
     // A short delay stops the first syllable of our own speech from interrupting it.
     const timer = setTimeout(() => {
+      if (phaseRef.current !== "speaking") return;
       try {
         recognition.start();
       } catch {
@@ -639,6 +657,56 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
+
+  /**
+   * Independent microphone check.
+   *
+   * Recording with MediaRecorder and measuring the samples answers "is any audio
+   * reaching this page?" without involving the speech service, which is the one
+   * thing that cannot be distinguished from silence any other way.
+   */
+  const testMicrophone = useCallback(async () => {
+    setMicTest({ state: "running" });
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      const stopped = new Promise<void>((resolve) => { recorder.onstop = () => resolve(); });
+      recorder.start();
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      recorder.stop();
+      await stopped;
+      stream.getTracks().forEach((track) => track.stop());
+
+      const blob = new Blob(chunks, { type: chunks[0]?.type || "audio/webm" });
+      const buffer = await blob.arrayBuffer();
+      const context = new OfflineAudioContext(1, 1, 48000);
+      const decoded = await context.decodeAudioData(buffer.slice(0));
+      const samples = decoded.getChannelData(0);
+      let peak = 0;
+      let sum = 0;
+      for (let i = 0; i < samples.length; i += 1) {
+        const value = Math.abs(samples[i]);
+        peak = Math.max(peak, value);
+        sum += value * value;
+      }
+      const rms = Math.sqrt(sum / Math.max(1, samples.length));
+      setMicTest({
+        state: "done",
+        level: rms,
+        text:
+          peak < 0.01
+            ? `Recorded ${decoded.duration.toFixed(1)}s but it was silent (peak ${peak.toFixed(3)}) — Chrome is not receiving your microphone.`
+            : `Recorded ${decoded.duration.toFixed(1)}s with sound (peak ${peak.toFixed(2)}, rms ${rms.toFixed(3)}) — the microphone works.`,
+      });
+    } catch (caught) {
+      setMicTest({
+        state: "done",
+        text: `Could not record: ${(caught as Error)?.name ?? "error"}. Check the microphone permission for this site.`,
+      });
+    }
+  }, []);
 
   const onPlanetTap = () => {
     if (phaseRef.current === "idle") {
@@ -730,6 +798,21 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
             {phase === "error" ? "Tap the planet to retry" : label}
           </p>
         )}
+        {(phase === "idle" || phase === "error") && (
+          <span className="flex flex-col items-center gap-1">
+            <button
+              type="button"
+              onClick={() => void testMicrophone()}
+              className="rounded-full border border-[var(--border)] bg-[var(--surface)]/85 px-2 py-0.5 text-caption font-semibold text-[var(--muted)] backdrop-blur-sm transition hover:text-[var(--text)]"
+            >
+              {micTest.state === "running" ? "Listening to the mic…" : "Test microphone"}
+            </button>
+            {micTest.state === "done" && micTest.text && (
+              <span className="max-w-[220px] text-center text-caption leading-snug text-[var(--muted)]">{micTest.text}</span>
+            )}
+          </span>
+        )}
+
         {/* While it is running, the planet's own motion shows the state; the words
             stay for anyone using a screen reader. */}
         <span className="sr-only" role="status" aria-live="polite">
