@@ -416,9 +416,15 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
           onTap={onPlanetTap}
           className="pointer-events-auto h-40 w-40 drop-shadow-[0_18px_40px_rgba(30,30,80,0.22)]"
         />
-        {phase === "idle" && (
-          <p className="rounded-full bg-[var(--surface)]/85 px-2 py-0.5 text-caption font-semibold text-[var(--muted)] backdrop-blur-sm">
-            {label}
+        {(phase === "idle" || phase === "error") && (
+          <p
+            className={`max-w-[180px] rounded-full px-2 py-0.5 text-center text-caption font-semibold backdrop-blur-sm ${
+              phase === "error"
+                ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                : "bg-[var(--surface)]/85 text-[var(--muted)]"
+            }`}
+          >
+            {phase === "error" ? "Microphone blocked — tap the planet to retry" : label}
           </p>
         )}
         {/* While it is running, the planet's own motion shows the state; the words
