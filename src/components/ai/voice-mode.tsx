@@ -79,12 +79,65 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const silentRoundsRef = useRef(0);
   /** What Chrome says it is hearing — the only way to tell silence from breakage. */
   const [micStatus, setMicStatus] = useState("mic off");
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voiceName, setVoiceName] = useState("");
+  const [speakingChunks, setSpeakingChunks] = useState(false);
   const micStatusRef = useRef("mic off");
+  const voiceRef = useRef<string>("");
+  const queueRef = useRef<string[]>([]);
+  const pumpingRef = useRef(false);
+  const bargeRef = useRef<any>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const spokenRef = useRef("");
 
   const setPhaseSafe = useCallback((next: Phase) => {
     phaseRef.current = next;
     setPhase(next);
   }, []);
+
+  /**
+   * Voice quality matters more than anything else here. Browsers ship a mix of
+   * old formant voices and newer neural ones; "Premium", "Enhanced", "Neural"
+   * and Siri voices sound human, the rest sound like 2005.
+   */
+  const qualityRank = (voice: SpeechSynthesisVoice) =>
+    /premium|enhanced|neural|natural|siri/i.test(voice.name) ? 0 : /google/i.test(voice.name) ? 1 : 2;
+
+  const pickVoice = useCallback((list: SpeechSynthesisVoice[], wanted: string) => {
+    if (wanted) {
+      const exact = list.find((voice) => voice.name === wanted);
+      if (exact) return exact;
+    }
+    const indian = list.filter((voice) => voice.lang === SPEECH_LANG).sort((a, b) => qualityRank(a) - qualityRank(b));
+    if (indian.length) return indian[0];
+    const english = list.filter((voice) => /^en/i.test(voice.lang)).sort((a, b) => qualityRank(a) - qualityRank(b));
+    return english[0] ?? list[0];
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    const load = () => {
+      const list = (window.speechSynthesis.getVoices() ?? [])
+        .filter((voice) => /^(en|hi)/i.test(voice.lang))
+        .sort((a, b) => qualityRank(a) - qualityRank(b) || a.name.localeCompare(b.name));
+      if (!list.length) return;
+      setVoices(list);
+      let stored = "";
+      try {
+        stored = window.localStorage.getItem("cyraops:voice") ?? "";
+      } catch {
+        stored = "";
+      }
+      const chosen = pickVoice(list, stored || voiceRef.current);
+      if (chosen) {
+        voiceRef.current = chosen.name;
+        setVoiceName(chosen.name);
+      }
+    };
+    load();
+    window.speechSynthesis.addEventListener?.("voiceschanged", load);
+    return () => window.speechSynthesis.removeEventListener?.("voiceschanged", load);
+  }, [pickVoice]);
 
   useEffect(() => {
     mutedRef.current = muted;
@@ -158,37 +211,90 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     }, 12000);
   }, [clearWatchdog, setPhaseSafe, stopRecognition]);
 
+  /**
+   * Speech, in sentences, as they arrive.
+   *
+   * Speaking only after the whole reply had streamed in was most of why this felt
+   * like a walkie-talkie. Chunks go into a queue and play back to back, so the
+   * first words are heard while the rest is still being written.
+   */
+  const pump = useCallback(() => {
+    if (pumpingRef.current || !activeRef.current) return;
+    const next = queueRef.current.shift();
+    if (!next) {
+      setSpeakingChunks(false);
+      return;
+    }
+    if (mutedRef.current || typeof window === "undefined" || !window.speechSynthesis) {
+      setSpeakingChunks(false);
+      return;
+    }
+    pumpingRef.current = true;
+    setSpeakingChunks(true);
+    setPhaseSafe("speaking");
+
+    const utterance = new SpeechSynthesisUtterance(next);
+    const chosen = voices.find((voice) => voice.name === voiceRef.current) ?? pickVoice(voices, voiceRef.current);
+    try {
+      if (chosen) utterance.voice = chosen;
+    } catch {
+      /* default voice */
+    }
+    utterance.lang = chosen?.lang || SPEECH_LANG;
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.onboundary = () => setSpeakPulseAt(Date.now());
+    const advance = () => {
+      pumpingRef.current = false;
+      if (!activeRef.current) return;
+      if (queueRef.current.length) pump();
+      else setSpeakingChunks(false);
+    };
+    utterance.onend = advance;
+    utterance.onerror = advance;
+    window.speechSynthesis.speak(utterance);
+  }, [pickVoice, setPhaseSafe, voices]);
+
+  /** Queue a sentence; the queue plays itself. */
+  const enqueueSpeech = useCallback(
+    (text: string) => {
+      const clean = plain(text).trim();
+      if (!clean) return;
+      spokenRef.current = `${spokenRef.current} ${clean}`.slice(-400);
+      queueRef.current.push(clean.slice(0, 600));
+      pump();
+    },
+    [pump]
+  );
+
+  const stopSpeaking = useCallback(() => {
+    queueRef.current = [];
+    pumpingRef.current = false;
+    setSpeakingChunks(false);
+    if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
+  }, []);
+
   const speak = useCallback(
     (text: string, thenListen: () => void) => {
       if (!text.trim() || mutedRef.current || typeof window === "undefined" || !window.speechSynthesis) {
         thenListen();
         return;
       }
-      setPhaseSafe("speaking");
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(plain(text).slice(0, 1200));
-      const voices = window.speechSynthesis.getVoices();
-      const preferred =
-        voices.find((voice) => voice.lang === SPEECH_LANG) ||
-        voices.find((voice) => /IN$/i.test(voice.lang ?? "")) ||
-        voices[0];
-      try {
-        if (preferred) utterance.voice = preferred;
-      } catch {
-        /* speak with the default voice */
-      }
-      utterance.lang = preferred?.lang || SPEECH_LANG;
-      utterance.rate = 1.02;
-      utterance.onboundary = () => setSpeakPulseAt(Date.now());
-      utterance.onend = () => {
-        if (activeRef.current) thenListen();
+      stopSpeaking();
+      queueRef.current.push(plain(text).slice(0, 1200));
+      // Wait for the queue to drain, then hand back to listening.
+      const waitForEnd = () => {
+        if (!activeRef.current) return;
+        if (queueRef.current.length || pumpingRef.current) {
+          setTimeout(waitForEnd, 150);
+          return;
+        }
+        thenListen();
       };
-      utterance.onerror = () => {
-        if (activeRef.current) thenListen();
-      };
-      window.speechSynthesis.speak(utterance);
+      pump();
+      waitForEnd();
     },
-    [setPhaseSafe]
+    [pump, stopSpeaking]
   );
 
   const listen = useCallback(() => {
@@ -299,8 +405,8 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   }, [clearWatchdog, setPhaseSafe, stopRecognition]);
 
   const ask = useCallback(
-    async (text: string, files: Attachment[] = []) => {
-      if (inFlightRef.current) return;
+    async (text: string, files: Attachment[] = [], supersede = false) => {
+      if (inFlightRef.current && !supersede) return;
       inFlightRef.current = true;
       setPhaseSafe("thinking");
       clearWatchdog();
@@ -310,10 +416,13 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       setStreamingReply("");
       appendTurn("user", text);
 
+      const controller = new AbortController();
+      streamAbortRef.current = controller;
       try {
         const response = await fetch("/api/assistant/chat/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({
             assistantId: assistantId || undefined,
             conversationId: conversationRef.current || undefined,
@@ -330,6 +439,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
         const decoder = new TextDecoder();
         let buffer = "";
         let reply = "";
+        let spokenUpTo = 0;
         let pending: { id: string; toolName: string; summary?: string; reason?: string; canAlwaysAllow?: boolean } | null = null;
 
         while (true) {
@@ -350,6 +460,14 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
             if (payload.type === "token") {
               reply += payload.content;
               setStreamingReply(reply);
+              // Speak each finished sentence as it forms, rather than waiting for
+              // the whole answer: the first words land about a second in.
+              const pendingText = reply.slice(spokenUpTo);
+              const sentence = /^([\s\S]*?[.!?…])(\s|$)/.exec(pendingText);
+              if (sentence && sentence[1].trim().length >= 12) {
+                spokenUpTo += sentence[1].length;
+                enqueueSpeech(sentence[1]);
+              }
             } else if (payload.type === "done") {
               if (payload.reply) reply = payload.reply;
               if (payload.conversationId) {
@@ -374,19 +492,34 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
           return;
         }
 
-        speak(reply, () => {
+        const tail = reply.slice(spokenUpTo).trim();
+        if (tail) enqueueSpeech(tail);
+        const waitForSpeech = () => {
+          if (!activeRef.current) return;
+          if (queueRef.current.length || pumpingRef.current) {
+            setTimeout(waitForSpeech, 150);
+            return;
+          }
           armWatchdog();
           listen();
-        });
+        };
+        if (queueRef.current.length || pumpingRef.current) waitForSpeech();
+        else {
+          armWatchdog();
+          listen();
+        }
       } catch (caught) {
         setStreamingReply("");
+        // Aborted because the person spoke over it: that is not an error.
+        if ((caught as { name?: string })?.name === "AbortError") return;
         setError(caught instanceof Error ? caught.message : "Something went wrong.");
         setPhaseSafe("error");
       } finally {
         inFlightRef.current = false;
+        if (streamAbortRef.current === controller) streamAbortRef.current = null;
       }
     },
-    [appendTurn, armWatchdog, assistantId, clearWatchdog, listen, onApprovalRequired, onConversation, setPhaseSafe, speak, stopRecognition]
+    [appendTurn, armWatchdog, assistantId, clearWatchdog, enqueueSpeech, listen, onApprovalRequired, onConversation, setPhaseSafe, stopRecognition]
   );
 
   /**
@@ -430,6 +563,80 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /**
+   * Barge-in: while it is talking, keep an ear open. Speaking over it stops the
+   * speech and takes the new sentence, the way a person would.
+   *
+   * Chrome's recognizer hears the browser's own output through the speakers, so
+   * an interruption must clear two bars: at least three words, and not a repeat
+   * of what is currently being said.
+   */
+  useEffect(() => {
+    if (phase !== "speaking") {
+      try {
+        bargeRef.current?.stop();
+      } catch {
+        /* already stopped */
+      }
+      bargeRef.current = null;
+      return;
+    }
+    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!Ctor) return;
+
+    const recognition = new Ctor();
+    recognition.lang = navigator.language?.toLowerCase().startsWith("hi") ? "hi-IN" : SPEECH_LANG;
+    recognition.interimResults = false;
+    recognition.continuous = false;
+    recognition.onresult = (event: any) => {
+      const said = String(event.results?.[0]?.[0]?.transcript ?? "").trim();
+      if (said.split(/\s+/).filter(Boolean).length < 3) return;
+      const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+      if (normalise(spokenRef.current).includes(normalise(said))) return; // it heard itself
+      // Speech recognition is not exact, so an echo rarely matches word for word.
+      // If most of what it "heard" is what it is saying, that is the speaker.
+      const saidWords = normalise(said).split(" ").filter(Boolean);
+      const spokenWords = new Set(normalise(spokenRef.current).split(" ").filter(Boolean));
+      const overlap = saidWords.filter((word) => spokenWords.has(word)).length / Math.max(1, saidWords.length);
+      if (overlap >= 0.6) return;
+      stopSpeaking();
+      try {
+        recognition.stop();
+      } catch {
+        /* already stopped */
+      }
+      // Cut the answer that was still streaming: the person has moved on.
+      try {
+        streamAbortRef.current?.abort();
+      } catch {
+        /* nothing in flight */
+      }
+      inFlightRef.current = false;
+      void ask(said, [], true);
+    };
+    recognition.onerror = () => {
+      /* barge-in is opportunistic: never surface its failures */
+    };
+    bargeRef.current = recognition;
+    // A short delay stops the first syllable of our own speech from interrupting it.
+    const timer = setTimeout(() => {
+      try {
+        recognition.start();
+      } catch {
+        /* ignore */
+      }
+    }, 700);
+    return () => {
+      clearTimeout(timer);
+      try {
+        recognition.stop();
+      } catch {
+        /* already stopped */
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
 
   const onPlanetTap = () => {
     if (phaseRef.current === "idle") {
@@ -608,6 +815,31 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
             placeholder="Type, or tap the planet to talk…"
             className="soft-scrollbar max-h-32 min-h-[38px] flex-1 resize-none rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-meta outline-none placeholder:text-[var(--muted)] focus:border-accent"
           />
+
+          {voices.length > 1 && (
+            <select
+              value={voiceName}
+              onChange={(event) => {
+                const chosen = event.target.value;
+                setVoiceName(chosen);
+                voiceRef.current = chosen;
+                try {
+                  window.localStorage.setItem("cyraops:voice", chosen);
+                } catch {
+                  /* storage may be unavailable */
+                }
+              }}
+              aria-label="Voice"
+              title="Voice"
+              className="h-9 max-w-[112px] shrink-0 cursor-pointer rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-1.5 text-caption text-[var(--muted)] outline-none focus:border-accent"
+            >
+              {voices.map((voice) => (
+                <option key={voice.name} value={voice.name}>
+                  {voice.name.replace(/^(Microsoft|Google)\s+/i, "").slice(0, 22)}
+                </option>
+              ))}
+            </select>
+          )}
 
           <input
             ref={fileRef}

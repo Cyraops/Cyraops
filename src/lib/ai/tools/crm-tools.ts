@@ -877,6 +877,10 @@ export const CRM_TOOLS: ToolDefinition[] = [
         }
       }
 
+      if (input.title !== undefined && !input.title.trim()) {
+        return { success: false, error: "A ticket title cannot be empty." };
+      }
+
       const closing = input.status === "DONE" && !task.closedAt;
       const reopening = input.status !== undefined && input.status !== "DONE";
       const updated = await db.task.update({
