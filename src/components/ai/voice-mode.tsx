@@ -82,6 +82,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   /** What Chrome says it is hearing — the only way to tell silence from breakage. */
   const [micStatus, setMicStatus] = useState("mic off");
   const [micTest, setMicTest] = useState<{ state: "idle" | "running" | "done"; level?: number; text?: string }>({ state: "idle" });
+  const [hostedVoice, setHostedVoice] = useState<null | "openai" | "elevenlabs">(null);
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [voiceGender, setVoiceGender] = useState<VoiceGender>("female");
   const [speakingChunks, setSpeakingChunks] = useState(false);
@@ -91,6 +92,8 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const pumpingRef = useRef(false);
   const bargeRef = useRef<any>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const serverVoiceRef = useRef(false);
   const spokenRef = useRef("");
 
   const setPhaseSafe = useCallback((next: Phase) => {
@@ -124,6 +127,17 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     load();
     window.speechSynthesis.addEventListener?.("voiceschanged", load);
     return () => window.speechSynthesis.removeEventListener?.("voiceschanged", load);
+  }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const data = await fetch("/api/assistant/tts")
+        .then((response) => response.json())
+        .catch(() => ({}));
+      const provider = data?.provider === "openai" || data?.provider === "elevenlabs" ? data.provider : null;
+      serverVoiceRef.current = Boolean(data?.available && provider);
+      setHostedVoice(data?.available && provider ? provider : null);
+    })();
   }, []);
 
   useEffect(() => {
@@ -205,6 +219,31 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
    * like a walkie-talkie. Chunks go into a queue and play back to back, so the
    * first words are heard while the rest is still being written.
    */
+  /**
+   * Speak one chunk with the browser's own voice. The fallback, used when this
+   * deployment has no hosted voice or the request fails mid-conversation.
+   */
+  const browserUtter = useCallback(
+    (text: string, advance: () => void) => {
+      const utterance = new SpeechSynthesisUtterance(text);
+      const wanted = chosenVoice(genderRef.current);
+      const chosen = wanted ? voices.find((voice) => voice.name === wanted.name) ?? null : null;
+      try {
+        if (chosen) utterance.voice = chosen;
+      } catch {
+        /* default voice */
+      }
+      utterance.lang = chosen?.lang || SPEECH_LANG;
+      utterance.rate = 1.0;
+      utterance.pitch = genderRef.current === "male" ? 0.9 : 1.05;
+      utterance.onboundary = () => setSpeakPulseAt(Date.now());
+      utterance.onend = advance;
+      utterance.onerror = advance;
+      window.speechSynthesis.speak(utterance);
+    },
+    [chosenVoice, voices]
+  );
+
   const pump = useCallback(() => {
     if (pumpingRef.current || !activeRef.current) return;
     const next = queueRef.current.shift();
@@ -212,36 +251,62 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       setSpeakingChunks(false);
       return;
     }
-    if (mutedRef.current || typeof window === "undefined" || !window.speechSynthesis) {
-      setSpeakingChunks(false);
-      return;
-    }
     pumpingRef.current = true;
     setSpeakingChunks(true);
     setPhaseSafe("speaking");
 
-    const utterance = new SpeechSynthesisUtterance(next);
-    const wanted = chosenVoice(genderRef.current);
-    const chosen = wanted ? voices.find((voice) => voice.name === wanted.name) ?? null : null;
-    try {
-      if (chosen) utterance.voice = chosen;
-    } catch {
-      /* default voice */
-    }
-    utterance.lang = chosen?.lang || SPEECH_LANG;
-    utterance.rate = 1.0;
-    utterance.pitch = genderRef.current === "male" ? 0.9 : 1.05;
-    utterance.onboundary = () => setSpeakPulseAt(Date.now());
     const advance = () => {
       pumpingRef.current = false;
       if (!activeRef.current) return;
       if (queueRef.current.length) pump();
       else setSpeakingChunks(false);
     };
-    utterance.onend = advance;
-    utterance.onerror = advance;
-    window.speechSynthesis.speak(utterance);
-  }, [chosenVoice, setPhaseSafe, voices]);
+
+    if (mutedRef.current) {
+      advance();
+      return;
+    }
+
+    // Hosted voice first: same voice on every machine, nothing to install.
+    if (serverVoiceRef.current && typeof window !== "undefined") {
+      void (async () => {
+        try {
+          const response = await fetch("/api/assistant/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: next, gender: genderRef.current }),
+          });
+          if (!response.ok) throw new Error("speech unavailable");
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audioRef.current = audio;
+          const finish = () => {
+            URL.revokeObjectURL(url);
+            if (audioRef.current === audio) audioRef.current = null;
+            advance();
+          };
+          audio.onended = finish;
+          audio.onerror = finish;
+          await audio.play();
+        } catch {
+          // Fall back for this chunk rather than going silent.
+          if (typeof window === "undefined" || !window.speechSynthesis) {
+            advance();
+            return;
+          }
+          browserUtter(next, advance);
+        }
+      })();
+      return;
+    }
+
+    if (typeof window === "undefined" || !window.speechSynthesis) {
+      advance();
+      return;
+    }
+    browserUtter(next, advance);
+  }, [browserUtter, setPhaseSafe]);
 
   /** Queue a sentence; the queue plays itself. */
   const enqueueSpeech = useCallback(
@@ -259,6 +324,12 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     queueRef.current = [];
     pumpingRef.current = false;
     setSpeakingChunks(false);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.currentTime = 0;
+      audioRef.current = null;
+    }
     if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
   }, []);
 
@@ -888,7 +959,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
           />
 
           {availableGenders(voices.map((voice) => ({ name: voice.name, lang: voice.lang }))).length > 1 && (
-            <span className="flex shrink-0 items-center gap-1" role="group" aria-label="Voice">
+            <span className="flex shrink-0 items-center gap-1" role="group" aria-label="Voice" title={hostedVoice ? `Hosted ${hostedVoice} voice` : "Using this computer's installed voices"}>
               {(["female", "male"] as VoiceGender[]).map((gender) => (
                 <button
                   key={gender}
