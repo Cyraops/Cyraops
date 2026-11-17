@@ -477,6 +477,8 @@ export async function sendAssistantMessage(params: {
   unattended?: boolean;
   /** Talk to a specific AI teammate instead of the personal assistant. */
   agentSlug?: string;
+  /** The reply is being read aloud, so it has to be short and plain. */
+  voice?: boolean;
 }): Promise<AssistantReply & { conversationId: string }> {
   const assistant = await db.assistant.findFirst({
     where: { id: params.assistantId, userId: params.userId },
@@ -574,7 +576,12 @@ export async function sendAssistantMessage(params: {
   const memories = await recallMemories(assistant.id, params.content ?? "");
   const systemPrompt = agent
     ? `${agent.systemPrompt}\n\nYou are one of the owner's AI teammates inside Cyraops CRM. Be concrete and brief. If the task belongs to a goal, post progress to the team thread with message_team so the others can see it.`
-    : withCapabilities(withPageGuidance(composeSystemPrompt(assistant.systemPrompt || BASE_SYSTEM_PROMPT, memories)));
+    : withCapabilities(
+        withPageGuidance(composeSystemPrompt(assistant.systemPrompt || BASE_SYSTEM_PROMPT, memories)) +
+          (params.voice
+            ? "\n\nYou are speaking aloud right now through a voice interface. Answer in one to three short spoken sentences, no lists, no headings, no markdown, no URLs. If there is a lot to say, offer to continue rather than reciting it all."
+            : "")
+      );
 
   const turn = await runAgentChatTurn({
     agent: {
@@ -628,6 +635,13 @@ export async function sendAssistantMessage(params: {
     };
     turn.reply = `${turn.reply}\n\n⚠️ This action needs your approval: ${row.toolName}. Approve or reject it below.`;
   }
+
+  /**
+   * Tool markup is stripped before storing, not only before rendering: once it is
+   * in the transcript it comes back on every reload, in the voice screen's copy of
+   * the thread, and in anything that summarises history.
+   */
+  turn.reply = stripToolMarkup(turn.reply);
 
   await db.assistantMessage.create({
     data: {

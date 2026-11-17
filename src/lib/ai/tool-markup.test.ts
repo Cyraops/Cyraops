@@ -46,3 +46,24 @@ test("isMostlyToolMarkup distinguishes nothing-left from real text", () => {
   assert.equal(isMostlyToolMarkup("Real answer"), false);
   assert.equal(isMostlyToolMarkup(""), false);
 });
+
+test("full-width bars and brackets are stripped too", () => {
+  const leaked = [
+    "Here is what is due.",
+    "",
+    "<｜｜DSML｜｜ calls>",
+    '<｜｜DSML｜｜ invoke name="list_schedule">',
+    '<｜｜DSML｜｜ parameter name="days" string="true">90</｜｜DSML｜｜ parameter>',
+    "</｜｜DSML｜｜ invoke>",
+    "</｜｜DSML｜｜ calls>",
+  ].join("\n");
+
+  const clean = stripToolMarkup(leaked);
+  assert.equal(clean, "Here is what is due.");
+  assert.ok(!/DSML/i.test(clean));
+});
+
+test("a bare DSML line with no brackets is removed", () => {
+  const clean = stripToolMarkup("Answer first.\n｜｜DSML｜｜ invoke name=\"x\"");
+  assert.equal(clean, "Answer first.");
+});

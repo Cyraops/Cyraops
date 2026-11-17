@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CornerDownLeft, Loader2, Paperclip, PhoneOff, Volume2, VolumeX, X } from "lucide-react";
 import { VoiceEarth, type EarthPhase } from "./voice-earth";
+import { stripToolMarkup } from "@/lib/ai/tool-markup";
 
 type Phase = "idle" | "listening" | "thinking" | "speaking" | "error";
 
@@ -34,9 +35,9 @@ interface Attachment {
 
 const SPEECH_LANG = "en-IN";
 
-/** Strip what should never be spoken: emphasis, code ticks, links, headings. */
+/** Strip what should never be read or spoken: tool markup, emphasis, links. */
 function plain(text: string): string {
-  return text
+  return stripToolMarkup(text ?? "")
     .replace(/```[\s\S]*?```/g, " (code) ")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, "$1")
@@ -428,6 +429,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
             conversationId: conversationRef.current || undefined,
             content: text,
             attachmentIds: files.length ? files.map((file) => file.id) : undefined,
+            voice: true,
           }),
         });
         if (!response.ok || !response.body) {

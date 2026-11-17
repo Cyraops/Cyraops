@@ -14,13 +14,23 @@
  * text that is going to be read or stored.
  */
 
-const BLOCK = /<\s*\|+\s*DSML\s*\|+[\s\S]*?<\s*\/\s*\|+\s*DSML\s*\|+\s*calls\s*>/gi;
-const SINGLE = /<\s*\|+\s*DSML\s*\|+[^>]*>/gi;
-const INVOKE = /<\s*\|+\s*DSML\s*\|+[\s\S]*?(?=\n\s*\n|$)/gi;
+/**
+ * The bars can arrive as full-width ｜ (U+FF5C) rather than ASCII |, and the
+ * angle brackets as full-width ＜ ＞ (U+FF1C/U+FF1E). All four appear in
+ * practice, so every pattern accepts both forms.
+ */
+const BAR = "[|｜]";
+const OPEN = "[<＜]";
+const CLOSE = "[>＞]";
+const BLOCK = new RegExp(`${OPEN}\\s*${BAR}+\\s*DSML\\s*${BAR}+[\\s\\S]*?${OPEN}\\s*\\/\\s*${BAR}+\\s*DSML\\s*${BAR}+\\s*calls\\s*${CLOSE}`, "gi");
+const SINGLE = new RegExp(`${OPEN}\\s*${BAR}+\\s*DSML\\s*${BAR}+[^${CLOSE.slice(1, -1)}]*${CLOSE}`, "gi");
+const INVOKE = new RegExp(`${OPEN}\\s*${BAR}+\\s*DSML\\s*${BAR}+[\\s\\S]*?(?=\\n\\s*\\n|$)`, "gi");
+/** A bare "｜｜DSML｜｜ calls" line with no brackets at all. */
+const BARE = new RegExp(`${BAR}{1,2}\\s*DSML\\s*${BAR}{1,2}[^\\n]*`, "gi");
 
 export function stripToolMarkup(input: string): string {
   if (!input || !/DSML/i.test(input)) return input ?? "";
-  let text = input.replace(BLOCK, "").replace(SINGLE, "");
+  let text = input.replace(BLOCK, "").replace(SINGLE, "").replace(BARE, "");
   // Anything still dangling from an unterminated block.
   text = text.replace(INVOKE, "");
   // Collapse the blank lines the removal leaves behind.

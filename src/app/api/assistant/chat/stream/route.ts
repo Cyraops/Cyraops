@@ -56,6 +56,7 @@ export async function POST(request: NextRequest) {
           // made the whole attach-a-file feature a no-op on the only path the
           // UI uses.
           agentSlug: typeof body?.agentSlug === "string" ? body.agentSlug : undefined,
+          voice: body?.voice === true,
           attachmentIds: Array.isArray(body?.attachmentIds)
             ? body.attachmentIds.filter((id: unknown) => typeof id === "string")
             : undefined,
