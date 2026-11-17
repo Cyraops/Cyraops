@@ -240,6 +240,7 @@ export function BotWorkspace() {
   const [activeAgent, setActiveAgent] = useState<string | null>(null);
   const [botModal, setBotModal] = useState<{ mode: "create" | "edit"; agent?: any; template?: string } | null>(null);
   const [teamOpen, setTeamOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [approvalsOpen, setApprovalsOpen] = useState(false);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [teammates, setTeammates] = useState<
@@ -1225,6 +1226,50 @@ export function BotWorkspace() {
             </span>
             New bot
           </button>
+
+          <button
+            onClick={() => setHistoryOpen((open) => !open)}
+            aria-expanded={historyOpen}
+            aria-controls="chat-history"
+            className="mt-1 flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left text-caption font-bold uppercase tracking-widest text-[var(--muted)] transition hover:bg-[var(--hover)] hover:text-[var(--text)]"
+          >
+            <ChevronDown size={11} className={`transition-transform ${historyOpen ? "" : "-rotate-90"}`} />
+            <span className="flex-1">History</span>
+            <span className="rounded-full bg-[var(--surface-2)] px-1.5 text-[10px] font-semibold normal-case tracking-normal">
+              {conversations.filter((conversation) => conversation.title && conversation.title !== "New chat").length}
+            </span>
+          </button>
+          {historyOpen && (
+            <div id="chat-history" className="soft-scrollbar mt-1 max-h-56 space-y-0.5 overflow-y-auto">
+              {conversations.filter((conversation) => conversation.title && conversation.title !== "New chat").length === 0 ? (
+                <p className="px-1.5 py-1 text-[11px] text-[var(--muted)]">Nothing yet — ask something.</p>
+              ) : (
+                conversations
+                  .filter((conversation) => conversation.title && conversation.title !== "New chat")
+                  .map((conversation) => (
+                    <button
+                      key={conversation.id}
+                      onClick={() => {
+                        setVoiceOpen(false);
+                        selectConversation(conversation.id);
+                      }}
+                      title={conversation.title}
+                      className={`flex w-full items-center gap-2 rounded-lg px-1.5 py-1.5 text-left transition ${
+                        conversation.id === conversationId ? "bg-accent/10 text-accent" : "hover:bg-[var(--hover)]"
+                      }`}
+                    >
+                      <MessageSquare size={11} className="shrink-0 text-[var(--muted)]" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[11px] font-medium text-[var(--text)]">{conversation.title}</span>
+                        <span className="block truncate text-[10px] text-[var(--muted)]">
+                          {new Date(conversation.updatedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+                        </span>
+                      </span>
+                    </button>
+                  ))
+              )}
+            </div>
+          )}
         </div>
 
         <div className="hidden">
