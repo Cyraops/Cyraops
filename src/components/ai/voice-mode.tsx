@@ -65,6 +65,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const [personPulseAt, setPersonPulseAt] = useState(0);
   const [speakPulseAt, setSpeakPulseAt] = useState(0);
   const [streamingReply, setStreamingReply] = useState("");
+  const [level, setLevel] = useState(0);
 
   const recognitionRef = useRef<any>(null);
   const conversationRef = useRef(conversationId ?? "");
@@ -75,6 +76,10 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const scrollRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioRef = useRef<{ context: AudioContext; analyser: AnalyserNode; raf: number } | null>(null);
+  const silentRoundsRef = useRef(0);
 
   const setPhaseSafe = useCallback((next: Phase) => {
     phaseRef.current = next;
@@ -119,7 +124,49 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     })();
   }, [conversationId]);
 
+  /** Watch the microphone's own level: silence here means nothing reaches us. */
+  const startMeter = useCallback((stream: MediaStream) => {
+    stopMeter();
+    try {
+      const context = new AudioContext();
+      void context.resume().catch(() => {});
+      const source = context.createMediaStreamSource(stream);
+      const analyser = context.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
+      const buffer = new Uint8Array(analyser.fftSize);
+      const tick = () => {
+        analyser.getByteTimeDomainData(buffer);
+        let peak = 0;
+        for (let i = 0; i < buffer.length; i += 1) peak = Math.max(peak, Math.abs(buffer[i] - 128));
+        setLevel(Math.min(1, peak / 96));
+        const current = audioRef.current;
+        if (current) current.raf = requestAnimationFrame(tick);
+      };
+      audioRef.current = { context, analyser, raf: requestAnimationFrame(tick) };
+    } catch {
+      /* metering is a diagnostic, not a requirement */
+    }
+  }, []);
+
+  const stopMeter = useCallback(() => {
+    const current = audioRef.current;
+    if (!current) return;
+    cancelAnimationFrame(current.raf);
+    void current.context.close().catch(() => {});
+    audioRef.current = null;
+    setLevel(0);
+  }, []);
+
+  const releaseMic = useCallback(() => {
+    stopMeter();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+  }, [stopMeter]);
+
   const stopRecognition = useCallback(() => {
+    if (watchdogRef.current) clearTimeout(watchdogRef.current);
+    watchdogRef.current = null;
     try {
       recognitionRef.current?.stop();
     } catch {
@@ -180,20 +227,38 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
 
     let finalText = "";
 
+    const clearWatchdog = () => {
+      if (watchdogRef.current) clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    };
+
     recognition.onresult = (event: any) => {
+      clearWatchdog();
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const result = event.results[i];
         if (result.isFinal) finalText += result[0].transcript;
         else interim += result[0].transcript;
       }
+      silentRoundsRef.current = 0;
       setHeard((finalText || interim).trim());
       setPersonPulseAt(Date.now());
     };
 
     recognition.onerror = (event: any) => {
       const reason = event?.error ?? "";
-      if (reason === "no-speech" || reason === "aborted") return;
+      if (reason === "aborted") return;
+      if (reason === "no-speech") {
+        silentRoundsRef.current += 1;
+        // Twice with nothing at all is not a pause, it is a dead microphone.
+        if (silentRoundsRef.current >= 2) {
+          setError(
+            "I can't hear anything. Check Chrome's microphone permission for this site and that the right input device is selected, then tap the planet to retry."
+          );
+          setPhaseSafe("error");
+        }
+        return;
+      }
       const messages: Record<string, string> = {
         "not-allowed": "Microphone is blocked. Allow it for this site and reload.",
         "service-not-allowed": "The browser's speech service is turned off on this device.",
@@ -205,6 +270,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     };
 
     recognition.onend = () => {
+      if (phaseRef.current !== "listening") stopMeter();
       if (!activeRef.current || phaseRef.current !== "listening") return;
       if (recognitionRef.current !== recognition) return;
       const text = finalText.trim();
@@ -218,6 +284,17 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     };
 
     recognitionRef.current = recognition;
+    // Nothing heard within nine seconds is not a pause; it is a dead path.
+    clearWatchdog();
+    watchdogRef.current = setTimeout(() => {
+      if (!activeRef.current || phaseRef.current !== "listening") return;
+      stopRecognition();
+      setError(
+        "I can't hear anything. Check Chrome's microphone permission for this site and that the right input device is selected, then tap the planet to retry."
+      );
+      setPhaseSafe("error");
+    }, 9000);
+
     try {
       recognition.start();
     } catch {
@@ -318,8 +395,12 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const start = useCallback(async () => {
     setError("");
     try {
+      releaseMic();
       const stream = await navigator.mediaDevices?.getUserMedia({ audio: true });
-      stream?.getTracks().forEach((track) => track.stop());
+      if (stream) {
+        streamRef.current = stream;
+        startMeter(stream);
+      }
     } catch (caught) {
       const name = (caught as DOMException)?.name ?? "";
       setError(
@@ -331,13 +412,14 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       return;
     }
     listen();
-  }, [listen, setPhaseSafe]);
+  }, [listen, releaseMic, setPhaseSafe, startMeter]);
 
   useEffect(() => {
     activeRef.current = true;
     return () => {
       activeRef.current = false;
       stopRecognition();
+      releaseMic();
       if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -416,6 +498,20 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
           onTap={onPlanetTap}
           className="pointer-events-auto h-40 w-40 drop-shadow-[0_18px_40px_rgba(30,30,80,0.22)]"
         />
+        {phase === "listening" && (
+          <span className="flex items-end gap-[3px]" aria-hidden>
+            {[0.2, 0.4, 0.6, 0.8, 1].map((threshold, index) => (
+              <span
+                key={index}
+                className="w-[3px] rounded-full transition-colors"
+                style={{
+                  height: `${6 + index * 3}px`,
+                  background: level >= threshold ? "var(--accent, #6c5ce7)" : "rgba(120,120,160,0.25)",
+                }}
+              />
+            ))}
+          </span>
+        )}
         {(phase === "idle" || phase === "error") && (
           <p
             className={`max-w-[180px] rounded-full px-2 py-0.5 text-center text-caption font-semibold backdrop-blur-sm ${
@@ -424,7 +520,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
                 : "bg-[var(--surface)]/85 text-[var(--muted)]"
             }`}
           >
-            {phase === "error" ? "Microphone blocked — tap the planet to retry" : label}
+            {phase === "error" ? "Tap the planet to retry" : label}
           </p>
         )}
         {/* While it is running, the planet's own motion shows the state; the words
