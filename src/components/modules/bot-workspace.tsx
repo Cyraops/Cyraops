@@ -283,7 +283,6 @@ export function BotWorkspace() {
   const [pages, setPages] = useState<PageMeta[]>([]);
   const [openPage, setOpenPage] = useState<OpenPage | null>(null);
   const [pagesBrowserOpen, setPagesBrowserOpen] = useState(false);
-  const [browserOpen, setBrowserOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
@@ -664,7 +663,7 @@ export function BotWorkspace() {
   const SLASH_COMMANDS = [
     { command: "/new", label: "Start a new chat", run: () => void newChat() },
     { command: "/pages", label: "Open pages", run: () => { void loadPages(); setPagesBrowserOpen(true); } },
-    { command: "/browser", label: "Open the live browser", run: () => setBrowserOpen(true) },
+    { command: "/browser", label: "Jump to the live browser", run: () => document.getElementById("rail-browser")?.scrollIntoView({ block: "nearest" }) },
     { command: "/routines", label: "Open routines", run: () => setRoutinesOpen(true) },
   ];
   const slashMatches = input.startsWith("/")
@@ -985,7 +984,9 @@ export function BotWorkspace() {
       speak(replyText);
       void loadConversations();
       // A page tool ran during this turn — surface the result immediately.
-      if (toolCallsUsed.some((tool) => /browser|navigate|screenshot/i.test(tool))) setBrowserOpen(true);
+      if (toolCallsUsed.some((tool) => /browser|navigate|screenshot/i.test(tool))) {
+        document.getElementById("rail-browser")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
       if (toolCallsUsed.some((tool) => tool === "create_page" || tool === "update_page")) {
         const list = await loadPages();
         if (list[0]) await showPage(list[0].id);
@@ -1746,23 +1747,15 @@ export function BotWorkspace() {
           </p>
         )}
 
-        {/* The assistant's browser lives here now: it is something you watch and
-            occasionally drive, not a thing that covers the conversation. */}
-        <button
-          onClick={() => setBrowserOpen((open) => !open)}
-          aria-expanded={browserOpen}
-          aria-controls="rail-browser"
-          className="mb-2 mt-4 flex w-full items-center gap-1.5 text-left text-caption font-bold uppercase tracking-widest text-[var(--muted)] transition hover:text-[var(--text)]"
-        >
-          <ChevronDown size={11} className={`transition-transform ${browserOpen ? "" : "-rotate-90"}`} />
+        {/* Always visible: the assistant's browser is something you watch and
+            occasionally drive, so it does not hide behind a toggle. */}
+        <p className="mb-2 mt-4 flex items-center gap-1.5 text-caption font-bold uppercase tracking-widest text-[var(--muted)]">
           <Globe size={12} />
           <span className="flex-1">Live browser</span>
-        </button>
-        {browserOpen && (
-          <div id="rail-browser" className="flex shrink-0 flex-col overflow-hidden rounded-lg border border-[var(--border)]">
-            <BrowserPanel embedded />
-          </div>
-        )}
+        </p>
+        <div id="rail-browser" className="flex shrink-0 flex-col overflow-hidden rounded-lg border border-[var(--border)]">
+          <BrowserPanel embedded />
+        </div>
       </aside>
 
       <RoutinesModal open={routinesOpen} onClose={() => setRoutinesOpen(false)} />
@@ -1803,7 +1796,7 @@ export function BotWorkspace() {
         actions={[
           { id: "new", label: "New chat", hint: "start fresh", run: () => void newChat() },
           { id: "pages", label: "Open pages", run: () => { void loadPages(); setPagesBrowserOpen(true); } },
-          { id: "browser", label: "Open live browser", run: () => setBrowserOpen(true) },
+          { id: "browser", label: "Jump to live browser", run: () => document.getElementById("rail-browser")?.scrollIntoView({ block: "nearest" }) },
           { id: "routines", label: "Open routines", run: () => setRoutinesOpen(true) },
         ]}
         onOpenConversation={(id) => void selectConversation(id)}
