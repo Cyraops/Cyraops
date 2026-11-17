@@ -77,6 +77,9 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   const fileRef = useRef<HTMLInputElement>(null);
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const silentRoundsRef = useRef(0);
+  /** What Chrome says it is hearing — the only way to tell silence from breakage. */
+  const [micStatus, setMicStatus] = useState("mic off");
+  const micStatusRef = useRef("mic off");
 
   const setPhaseSafe = useCallback((next: Phase) => {
     phaseRef.current = next;
@@ -122,8 +125,6 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
   }, [conversationId]);
 
   const stopRecognition = useCallback(() => {
-    if (watchdogRef.current) clearTimeout(watchdogRef.current);
-    watchdogRef.current = null;
     try {
       recognitionRef.current?.stop();
     } catch {
@@ -131,6 +132,31 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     }
     recognitionRef.current = null;
   }, []);
+
+  const clearWatchdog = useCallback(() => {
+    if (watchdogRef.current) clearTimeout(watchdogRef.current);
+    watchdogRef.current = null;
+  }, []);
+
+  /**
+   * One timer per listening session. Recognizers can end immediately and be
+   * restarted in a loop; if each restart re-armed this, silence could last
+   * forever without ever being reported.
+   */
+  const armWatchdog = useCallback(() => {
+    clearWatchdog();
+    watchdogRef.current = setTimeout(() => {
+      if (!activeRef.current || phaseRef.current !== "listening") return;
+      const heardSomething = /hearing (sound|speech)/.test(micStatusRef.current);
+      stopRecognition();
+      setError(
+        heardSomething
+          ? "I can hear you, but Chrome is not turning it into words — its speech service looks blocked on this network."
+          : "Your microphone opened but no sound reached me. Check which input device Chrome is using, then tap the planet to try again."
+      );
+      setPhaseSafe("error");
+    }, 12000);
+  }, [clearWatchdog, setPhaseSafe, stopRecognition]);
 
   const speak = useCallback(
     (text: string, thenListen: () => void) => {
@@ -185,10 +211,19 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     let finalText = "";
     let lastInterim = "";
 
-    const clearWatchdog = () => {
-      if (watchdogRef.current) clearTimeout(watchdogRef.current);
-      watchdogRef.current = null;
+    // Chrome reports its audio pipeline through these events: they separate
+    // "microphone never opened" from "microphone open, no sound" from
+    // "sound arrived but no words were recognised".
+    const note = (value: string) => {
+      micStatusRef.current = value;
+      setMicStatus(value);
     };
+    recognition.onaudiostart = () => note("mic open");
+    recognition.onaudioend = () => note("mic closed");
+    recognition.onsoundstart = () => note("hearing sound");
+    recognition.onsoundend = () => note("sound stopped");
+    recognition.onspeechstart = () => note("hearing speech");
+    recognition.onspeechend = () => note("speech ended");
 
     recognition.onresult = (event: any) => {
       clearWatchdog();
@@ -208,11 +243,13 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       const reason = event?.error ?? "";
       if (reason === "aborted") return;
       if (reason === "no-speech") {
+        // Chrome gives up after a few seconds of quiet. That is a pause, not a
+        // fault: keep listening and only speak up if it happens repeatedly.
         silentRoundsRef.current += 1;
-        // Twice with nothing at all is not a pause, it is a dead microphone.
-        if (silentRoundsRef.current >= 2) {
+        note("mic open, no sound yet");
+        if (silentRoundsRef.current >= 4) {
           setError(
-            "I can't hear anything. Check Chrome's microphone permission for this site and that the right input device is selected, then tap the planet to retry."
+            "Your microphone is open but I'm not hearing anything. Check which input device Chrome is using, then tap the planet to try again."
           );
           setPhaseSafe("error");
         }
@@ -224,6 +261,15 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
         "audio-capture": "No microphone was found.",
         network: "Voice needs an internet connection in Chrome.",
       };
+      if (reason === "language-not-supported" && recognition.lang !== "en-US") {
+        recognition.lang = "en-US";
+        try {
+          recognition.start();
+          return;
+        } catch {
+          /* fall through to the error below */
+        }
+      }
       setError(messages[reason] ?? `Listening stopped (${reason || "unknown reason"}).`);
       setPhaseSafe("error");
     };
@@ -242,16 +288,6 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
     };
 
     recognitionRef.current = recognition;
-    // Nothing heard within nine seconds is not a pause; it is a dead path.
-    clearWatchdog();
-    watchdogRef.current = setTimeout(() => {
-      if (!activeRef.current || phaseRef.current !== "listening") return;
-      stopRecognition();
-      setError(
-        "I can't hear anything. Check Chrome's microphone permission for this site and that the right input device is selected, then tap the planet to retry."
-      );
-      setPhaseSafe("error");
-    }, 9000);
 
     try {
       recognition.start();
@@ -260,13 +296,14 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       setPhaseSafe("error");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setPhaseSafe, stopRecognition]);
+  }, [clearWatchdog, setPhaseSafe, stopRecognition]);
 
   const ask = useCallback(
     async (text: string, files: Attachment[] = []) => {
       if (inFlightRef.current) return;
       inFlightRef.current = true;
       setPhaseSafe("thinking");
+      clearWatchdog();
       stopRecognition();
       setError("");
       setHeard("");
@@ -337,7 +374,10 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
           return;
         }
 
-        speak(reply, listen);
+        speak(reply, () => {
+          armWatchdog();
+          listen();
+        });
       } catch (caught) {
         setStreamingReply("");
         setError(caught instanceof Error ? caught.message : "Something went wrong.");
@@ -346,7 +386,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
         inFlightRef.current = false;
       }
     },
-    [appendTurn, assistantId, listen, onApprovalRequired, onConversation, setPhaseSafe, speak, stopRecognition]
+    [appendTurn, armWatchdog, assistantId, clearWatchdog, listen, onApprovalRequired, onConversation, setPhaseSafe, speak, stopRecognition]
   );
 
   /**
@@ -357,6 +397,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
    */
   const start = useCallback(() => {
     setError("");
+    armWatchdog();
     listen();
     void (async () => {
       try {
@@ -377,12 +418,13 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
         }
       }
     })();
-  }, [listen, setPhaseSafe, stopRecognition]);
+  }, [armWatchdog, listen, setPhaseSafe, stopRecognition]);
 
   useEffect(() => {
     activeRef.current = true;
     return () => {
       activeRef.current = false;
+      clearWatchdog();
       stopRecognition();
       if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
     };
@@ -400,6 +442,7 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
       return;
     }
     if (phaseRef.current === "listening") {
+      clearWatchdog();
       stopRecognition();
       setPhaseSafe("idle");
       return;
@@ -462,6 +505,11 @@ export function VoiceMode({ assistantId, conversationId, onConversation, onExit,
           onTap={onPlanetTap}
           className="pointer-events-auto h-40 w-40 drop-shadow-[0_18px_40px_rgba(30,30,80,0.22)]"
         />
+        {phase === "listening" && (
+          <p className="rounded-full bg-[var(--surface)]/85 px-2 py-0.5 text-caption font-semibold text-[var(--muted)] backdrop-blur-sm">
+            {micStatus}
+          </p>
+        )}
         {(phase === "idle" || phase === "error") && (
           <p
             className={`max-w-[180px] rounded-full px-2 py-0.5 text-center text-caption font-semibold backdrop-blur-sm ${
