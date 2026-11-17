@@ -95,7 +95,7 @@ export function BrowserPanel({ onClose, embedded = false }: { onClose?: () => vo
     <aside
       className={
         embedded
-          ? "flex h-full min-h-0 w-full flex-1 flex-col overflow-hidden bg-[var(--surface)]"
+          ? "flex w-full shrink-0 flex-col overflow-hidden bg-[var(--surface)]"
           : "absolute inset-y-0 right-0 z-30 flex w-full max-w-[620px] flex-col border-l border-[var(--border)] bg-[var(--surface)] shadow-2xl"
       }
     >
@@ -160,7 +160,14 @@ export function BrowserPanel({ onClose, embedded = false }: { onClose?: () => vo
         </span>
       </header>
 
-      <div className="soft-scrollbar relative min-h-0 flex-1 overflow-auto bg-[var(--surface-2)] p-2">
+      <div
+        className={
+          embedded
+            ? "soft-scrollbar relative w-full overflow-hidden bg-[var(--surface-2)]"
+            : "soft-scrollbar relative min-h-0 flex-1 overflow-auto bg-[var(--surface-2)] p-2"
+        }
+        style={embedded ? { aspectRatio: "16 / 10" } : undefined}
+      >
         {frame?.image ? (
           // eslint-disable-next-line @next/next/no-img-element -- live frame, not an optimizable asset
           <img

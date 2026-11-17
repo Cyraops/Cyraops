@@ -1759,7 +1759,7 @@ export function BotWorkspace() {
           <span className="flex-1">Live browser</span>
         </button>
         {browserOpen && (
-          <div id="rail-browser" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)]">
+          <div id="rail-browser" className="flex shrink-0 flex-col overflow-hidden rounded-lg border border-[var(--border)]">
             <BrowserPanel embedded />
           </div>
         )}
