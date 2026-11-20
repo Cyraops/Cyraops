@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Building2, CheckCircle2, Command, ShieldCheck, KeyRound } from "lucide-react";
+import { ArrowRight, Building2, CheckCircle2, Command, Download, ShieldCheck, KeyRound } from "lucide-react";
 import { Button, Field, useToast } from "@/components/ui";
 
 type Mode = "login" | "setup";
@@ -14,6 +14,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [setupToken, setSetupToken] = useState<string | null>(null);
   const [inviteUser, setInviteUser] = useState<{ name: string; email: string } | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
+  const [harnessNote, setHarnessNote] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -166,7 +167,33 @@ export function AuthForm({ mode }: { mode: Mode }) {
             Individual authenticated accounts
           </div>
           {mode === "login" && !isTokenSetup && (
-            <p className="mt-5 text-center text-xs text-[var(--muted)]">Need an account? Ask your workspace administrator for an invitation.</p>
+            <>
+              <p className="mt-5 text-center text-xs text-[var(--muted)]">Need an account? Ask your workspace administrator for an invitation.</p>
+              <div className="mt-6 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--hover)] text-[var(--muted)]">
+                    <Download size={16} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-[var(--text)]">Get the Cyraops Harness</p>
+                    <p className="mt-0.5 text-[11px] leading-5 text-[var(--muted)]">
+                      The desktop app — your workspace, projects and AI bots, running on your machine.
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Button type="button" variant="secondary" className="h-8 px-3 text-xs" onClick={() => setHarnessNote((shown) => !shown)}>
+                        <Download size={13} /> Download for macOS
+                      </Button>
+                      <span className="text-[10px] text-[var(--muted)]">Coming soon · Windows &amp; Linux to follow</span>
+                    </div>
+                    {harnessNote && (
+                      <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
+                        The download isn&rsquo;t live yet — the first build will appear here.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </>
       )}
