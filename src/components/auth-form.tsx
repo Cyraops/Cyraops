@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Building2, CheckCircle2, Command, Download, ShieldCheck, KeyRound } from "lucide-react";
+import { Apple, ArrowRight, Building2, CheckCircle2, Command, ShieldCheck, KeyRound } from "lucide-react";
 import { Button, Field, useToast } from "@/components/ui";
 
 type Mode = "login" | "setup";
@@ -169,29 +169,37 @@ export function AuthForm({ mode }: { mode: Mode }) {
           {mode === "login" && !isTokenSetup && (
             <>
               <p className="mt-5 text-center text-xs text-[var(--muted)]">Need an account? Ask your workspace administrator for an invitation.</p>
-              <div className="mt-6 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
-                <div className="flex items-start gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border)] bg-[var(--hover)] text-[var(--muted)]">
-                    <Download size={16} />
+              <div className="mt-6 overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-soft">
+                <div className="flex items-start gap-3.5 p-4">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#211d3c] text-white shadow-sm">
+                    <Apple size={19} />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-[var(--text)]">Get the Cyraops Harness</p>
-                    <p className="mt-0.5 text-[11px] leading-5 text-[var(--muted)]">
-                      The desktop app — your workspace, projects and AI bots, running on your machine.
-                    </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Button type="button" variant="secondary" className="h-8 px-3 text-xs" onClick={() => setHarnessNote((shown) => !shown)}>
-                        <Download size={13} /> Download for macOS
-                      </Button>
-                      <span className="text-[10px] text-[var(--muted)]">Coming soon · Windows &amp; Linux to follow</span>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[10px] font-bold uppercase tracking-[.16em] text-[var(--muted)]">Desktop app</p>
+                      <span className="rounded-full border border-[var(--border)] px-1.5 py-px text-[9px] font-semibold uppercase tracking-wider text-[var(--muted)]">Soon</span>
                     </div>
-                    {harnessNote && (
-                      <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
-                        The download isn&rsquo;t live yet — the first build will appear here.
-                      </p>
-                    )}
+                    <p className="mt-0.5 font-display text-[15px] font-extrabold tracking-[-.02em] text-[var(--text)]">Cyraops Harness</p>
+                    <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                      Your workspace, projects and AI bots — running on your machine, not in a browser tab.
+                    </p>
                   </div>
                 </div>
+                <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] bg-[var(--hover)]/40 px-4 py-2.5">
+                  <div className="flex items-center gap-1.5 text-[10px] text-[var(--muted)]">
+                    <span className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 font-semibold text-[var(--text)]">macOS</span>
+                    <span className="rounded-full border border-[var(--border)] px-2 py-0.5 opacity-55">Windows</span>
+                    <span className="rounded-full border border-[var(--border)] px-2 py-0.5 opacity-55">Linux</span>
+                  </div>
+                  <Button type="button" className="h-8 bg-[#211d3c] px-3.5 text-xs text-white shadow-sm hover:bg-[#2b2450]" onClick={() => setHarnessNote((shown) => !shown)}>
+                    <Apple size={13} /> Download
+                  </Button>
+                </div>
+                {harnessNote && (
+                  <p className="border-t border-[var(--border)] px-4 py-2.5 text-[11px] leading-5 text-[var(--muted)]">
+                    The first build isn&rsquo;t published yet — it will appear here the moment it&rsquo;s ready.
+                  </p>
+                )}
               </div>
             </>
           )}
