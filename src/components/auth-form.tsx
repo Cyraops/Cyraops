@@ -15,6 +15,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [inviteUser, setInviteUser] = useState<{ name: string; email: string } | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [harnessNote, setHarnessNote] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -76,18 +77,32 @@ export function AuthForm({ mode }: { mode: Mode }) {
       data.token = setupToken;
       if (data.password !== data.confirmPassword) {
         setBusy(false);
-        return toast("Passwords do not match", "error");
+        setFormError("Passwords do not match.");
+        return;
       }
     }
 
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
+    setFormError(null);
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+    } catch {
+      setBusy(false);
+      // The login page sits outside the workspace shell, so its toast provider
+      // is absent: failures must be visible inline or the button looks dead.
+      setFormError("Could not reach the server. Check your connection and try again.");
+      return;
+    }
     const result = await response.json().catch(() => ({}));
     setBusy(false);
-    if (!response.ok) return toast(result.error ?? "Something went wrong", "error");
+    if (!response.ok) {
+      setFormError(result.error ?? "Something went wrong. Please try again.");
+      return;
+    }
 
     toast(setupToken ? "Account configured successfully" : mode === "setup" ? "Workspace initialized" : "Signed in");
     router.push("/dashboard");
@@ -159,6 +174,11 @@ export function AuthForm({ mode }: { mode: Mode }) {
                 <Field label="Password" name="password" type="password" required autoComplete="current-password" minLength={1} maxLength={128} placeholder="Your account password" />
                 <Button className="mt-2 h-11 w-full justify-between px-4" disabled={busy}>{busy ? "Please wait…" : "Sign in"}<ArrowRight size={16} /></Button>
               </>
+            )}
+            {formError && (
+              <p role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium leading-5 text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+                {formError}
+              </p>
             )}
           </form>
 
